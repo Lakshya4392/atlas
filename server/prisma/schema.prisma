@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  style     String   @default("Smart Casual")
+  streak    Int      @default(0)
+  level     String   @default("Style Explorer")
+  createdAt DateTime @default(now())
+  
+  clothes   ClothingItem[]
+  outfits   Outfit[]
+}
+
+model ClothingItem {
+  id        String   @id @default(cuid())
+  name      String
+  category  String
+  color     String
+  brand     String
+  imageUrl  String   // Stored in Cloudinary
+  tags      String[]
+  wearCount Int      @default(0)
+  favorite  Boolean  @default(false)
+  lastWorn  DateTime?
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  outfitItems OutfitItem[]
+}
+
+model Outfit {
+  id          String   @id @default(cuid())
+  name        String
+  occasion    String
+  rating      Int      @default(0)
+  aiGenerated Boolean  @default(false)
+  weather     String?
+  date        DateTime @default(now())
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items       OutfitItem[]
+}
+
+// Join table for many-to-many relation between Outfits and ClothingItems
+model OutfitItem {
+  id             String       @id @default(cuid())
+  outfitId       String
+  clothingItemId String
+  
+  outfit         Outfit       @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  clothingItem   ClothingItem @relation(fields: [clothingItemId], references: [id], onDelete: Cascade)
+
+  @@unique([outfitId, clothingItemId])
+}
