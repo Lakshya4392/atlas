@@ -6,7 +6,7 @@ export interface WeatherData {
   icon: string;
 }
 
-export async function fetchWeather(lat: number = 28.6139, lon: number = 77.2090): Promise<WeatherData> {
+export async function fetchWeather(lat: number = 40.7128, lon: number = -74.0060): Promise<WeatherData> {
   // Default to New Delhi coordinates if none provided
   if (!OPENWEATHER_API_KEY) {
     console.warn("No OpenWeather API key found in .env. Using mock weather data.");
@@ -17,6 +17,11 @@ export async function fetchWeather(lat: number = 28.6139, lon: number = 77.2090)
     const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHER_API_KEY}`);
     const data = await res.json();
     
+    if (!res.ok || !data.main) {
+      console.warn("Weather API returned an error:", data.message || "Unknown error");
+      return { temp: 22, condition: 'Clear', icon: 'sunny' }; // Sensible default
+    }
+
     return {
       temp: Math.round(data.main.temp),
       condition: data.weather[0].main,

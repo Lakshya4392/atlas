@@ -1,25 +1,107 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Switch, Dimensions, Image
+  TouchableOpacity, Switch, Dimensions, Image, ActivityIndicator, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import {
   Colors, FontSize, FontWeight, Spacing, BorderRadius,
 } from '../../constants/theme';
-import { USER_PROFILE, CLOTHING_ITEMS, WISHLIST_ITEMS, INSPO_ITEMS, TRIPS } from '../../constants/data';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const STYLE_TAGS = ['Smart Casual', 'Minimalist', 'Streetwear', 'Classic', 'Bohemian', 'Athleisure'];
+
+const getBackendUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:3000`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
 
 export default function ProfileScreen() {
   const [notifs, setNotifs] = useState(true);
   const [weather, setWeather] = useState(true);
   const [ai, setAi] = useState(true);
-  const mostWorn = [...CLOTHING_ITEMS].sort((a, b) => b.wearCount - a.wearCount).slice(0, 3);
-  const favCount = CLOTHING_ITEMS.filter(i => i.favorite).length;
+  const [user, setUser] = useState<any>(null);
+  const [uploading, setUploading] = useState(false);
+  const [stats, setStats] = useState({ clothesCount: 0, outfitsCount: 0, favoritesCount: 0, streak: 0, level: 'Style Explorer', style: 'Minimalist' });
+
+  const BACKEND_URL = getBackendUrl();
+
+  React.useEffect(() => {
+    const fetchUser = async () => {
+      const stored = await AsyncStorage.getItem('user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setUser(u);
+        // Fetch real stats
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/user/${u.id}/stats`);
+          const data = await res.json();
+          if (data.success) setStats(data.stats);
+        } catch (e) {
+          console.error('Stats fetch error:', e);
+        }
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleUpdateAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [3, 4],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append('image', {
+          uri: result.assets[0].uri,
+          type: 'image/jpeg',
+          name: 'avatar.jpg',
+        } as any);
+
+        const res = await fetch(`${BACKEND_URL}/api/upload`, {
+          method: 'POST',
+          body: formData,
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          // Update user avatar in DB
+          const updateRes = await fetch(`${BACKEND_URL}/api/user/${user.id}/avatar`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatarUrl: data.url }),
+          });
+          const updateData = await updateRes.json();
+          if (updateData.success) {
+            const newUser = { ...user, avatar: data.url };
+            await AsyncStorage.setItem('user', JSON.stringify(newUser));
+            setUser(newUser);
+          }
+        }
+      } catch (e) {
+        console.error('Avatar upload error:', e);
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  // mostWorn and favCount now come from real API stats above
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -37,21 +119,21 @@ export default function ProfileScreen() {
         <View style={styles.profileCard}>
           <View style={styles.profileAvatarWrapper}>
             <View style={styles.profileAvatar}>
-              <Text style={styles.profileAvatarText}>{USER_PROFILE.name.charAt(0)}</Text>
+              <Text style={styles.profileAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
             </View>
           </View>
-          <Text style={styles.profileName}>{USER_PROFILE.name}</Text>
-          <Text style={styles.profileStyle}>{USER_PROFILE.style.toUpperCase()}</Text>
+          <Text style={styles.profileName}>{user?.name || 'Your Name'}</Text>
+          <Text style={styles.profileStyle}>{stats.style?.toUpperCase()}</Text>
           <View style={styles.levelRow}>
-            <Text style={styles.levelText}>{USER_PROFILE.streak} DAY STREAK</Text>
+            <Text style={styles.levelText}>{stats.streak} DAY STREAK · {stats.level}</Text>
           </View>
         </View>
         {/* ── Stats card ── */}
         <View style={styles.statsCard}>
           {[
-            { label: 'PIECES', value: USER_PROFILE.closetCount },
-            { label: 'OUTFITS', value: USER_PROFILE.outfitCount },
-            { label: 'FAVORITES', value: favCount },
+            { label: 'PIECES', value: stats.clothesCount },
+            { label: 'OUTFITS', value: stats.outfitsCount },
+            { label: 'FAVORITES', value: stats.favoritesCount },
           ].map((stat, i) => (
             <View key={i} style={styles.statItem}>
               <Text style={styles.statValue}>{stat.value}</Text>
@@ -60,14 +142,52 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* ── AI Avatar Section ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>AI AVATAR</Text>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatarPreview}>
+              {user?.avatar ? (
+                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Ionicons name="person-outline" size={40} color="#999" />
+                  <Text style={styles.avatarPlaceholderText}>No Body Photo</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.avatarInfo}>
+              <Text style={styles.avatarHint}>
+                Upload a full-body photo for the AI to "try on" clothes on you.
+              </Text>
+              <TouchableOpacity 
+                style={styles.avatarUploadBtn} 
+                onPress={handleUpdateAvatar}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="camera" size={16} color="#fff" />
+                    <Text style={styles.avatarUploadText}>
+                      {user?.avatar ? 'UPDATE PHOTO' : 'UPLOAD PHOTO'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         {/* ── Explore section ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>EXPLORE</Text>
           <View style={styles.exploreGrid}>
             {[
-              { icon: 'heart', label: 'WISHLIST', sub: `${WISHLIST_ITEMS.filter(i => i.saved).length} saved`, route: '/wishlist' },
+              { icon: 'heart', label: 'WISHLIST', sub: 'Saved items', route: '/wishlist' },
               { icon: 'images', label: 'INSPO FEED', sub: 'Discover looks', route: '/inspo' },
-              { icon: 'airplane', label: 'TRIP PLANNER', sub: `${TRIPS.length} trips`, route: '/trip-planner' },
+              { icon: 'airplane', label: 'TRIP PLANNER', sub: 'Pack smart', route: '/trip-planner' },
               { icon: 'calendar', label: 'WEAR LOG', sub: 'Your history', route: '/calendar-log' },
             ].map((item, i) => (
               <TouchableOpacity
@@ -91,12 +211,12 @@ export default function ProfileScreen() {
             {STYLE_TAGS.map(tag => (
               <TouchableOpacity
                 key={tag}
-                style={[styles.styleTag, tag === USER_PROFILE.style && styles.styleTagActive]}
+                style={[styles.styleTag, tag === stats.style && styles.styleTagActive]}
               >
-                <Text style={[styles.styleTagText, tag === USER_PROFILE.style && styles.styleTagTextActive]}>
+                <Text style={[styles.styleTagText, tag === stats.style && styles.styleTagTextActive]}>
                   {tag.toUpperCase()}
                 </Text>
-                {tag === USER_PROFILE.style && (
+                {tag === stats.style && (
                   <Ionicons name="checkmark" size={12} color="#fff" />
                 )}
               </TouchableOpacity>
@@ -104,30 +224,16 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Most Worn ── */}
+        {/* ── Most Worn — removed mock data, show placeholder ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>MOST WORN</Text>
           <View style={styles.card}>
-            {mostWorn.map((item, i) => (
-              <View key={item.id}>
-                <TouchableOpacity
-                  style={styles.wornRow}
-                  onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.wornRank}>{String(i + 1).padStart(2, '0')}</Text>
-                  <View style={styles.wornImageContainer}>
-                    <Image source={item.image} style={styles.wornImage} resizeMode="cover" />
-                  </View>
-                  <View style={styles.wornInfo}>
-                    <Text style={styles.wornName}>{item.name.toUpperCase()}</Text>
-                    <Text style={styles.wornBrand}>{item.brand}</Text>
-                  </View>
-                  <Text style={styles.wornCount}>{item.wearCount}×</Text>
-                </TouchableOpacity>
-                {i < mostWorn.length - 1 && <View style={styles.rowDivider} />}
-              </View>
-            ))}
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Ionicons name="shirt-outline" size={32} color="#ccc" />
+              <Text style={{ fontSize: 12, color: '#999', marginTop: 8, fontWeight: '600' }}>
+                Add items to see your most worn pieces
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -375,4 +481,64 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.lg, gap: Spacing.md },
   menuLabel: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: FontWeight.medium },
   version: { textAlign: 'center', fontSize: FontSize.xs, color: Colors.textLight, fontWeight: FontWeight.bold, letterSpacing: 3, paddingVertical: Spacing['2xl'] },
+  
+  avatarContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    padding: Spacing.lg,
+    gap: Spacing.lg,
+    alignItems: 'center',
+  },
+  avatarPreview: {
+    width: 100,
+    height: 130,
+    borderRadius: 12,
+    backgroundColor: '#EAEAEA',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#DDD',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  avatarPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  avatarPlaceholderText: {
+    fontSize: 10,
+    color: '#999',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  avatarInfo: {
+    flex: 1,
+    gap: 12,
+  },
+  avatarHint: {
+    fontSize: 12,
+    color: '#666',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  avatarUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 8,
+  },
+  avatarUploadText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
 });

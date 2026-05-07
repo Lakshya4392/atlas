@@ -17,8 +17,16 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
 
   const handleLogin = async () => {
-    // Bypass auth for UI testing
-    router.replace('/(tabs)');
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+    try {
+      await login(email.trim());
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message || 'User not found. Please register first.');
+    }
   };
 
   return (

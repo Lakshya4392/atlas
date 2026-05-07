@@ -1,26 +1,61 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, FlatList, Dimensions, Image
+  TouchableOpacity, FlatList, Dimensions, Image, ActivityIndicator, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
 } from '../../constants/theme';
-import { OUTFITS, CLOTHING_ITEMS, Outfit } from '../../constants/data';
 
 const { width } = Dimensions.get('window');
 const CARD_W = (width - Spacing['2xl'] * 2 - Spacing.md) / 2;
 const OCCASIONS = ['ALL', 'WORK', 'CASUAL', 'EVENING', 'DATE NIGHT'];
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
+const getBackendUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:3000`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
 export default function OutfitsScreen() {
   const [occ, setOcc] = useState('ALL');
   const [tab, setTab] = useState<'outfits' | 'planner'>('outfits');
-  const filtered = OUTFITS.filter(o => occ === 'ALL' || o.occasion.toUpperCase() === occ);
+  const [outfits, setOutfits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const BACKEND_URL = getBackendUrl();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      AsyncStorage.getItem('user').then(stored => {
+        if (stored) {
+          const u = JSON.parse(stored);
+          setUserId(u.id);
+          fetch(`${BACKEND_URL}/api/outfits/${u.id}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success) setOutfits(data.outfits);
+            })
+            .catch(e => console.error('Outfits fetch error:', e))
+            .finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      });
+    }, [])
+  );
+
+  const filtered = outfits.filter(o => occ === 'ALL' || o.occasion?.toUpperCase() === occ);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -82,6 +117,9 @@ export default function OutfitsScreen() {
           </View>
 
           {/* ── Grid ── */}
+          {loading ? (
+            <ActivityIndicator size="large" color="#000" style={{ marginTop: 40 }} />
+          ) : (
           <FlatList
             data={filtered}
             numColumns={2}
@@ -90,8 +128,8 @@ export default function OutfitsScreen() {
             columnWrapperStyle={styles.row}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => {
-              const pieces = CLOTHING_ITEMS.filter(c => item.items.includes(c.id));
-              const first = pieces[0];
+              // Real API: items is array of { clothingItem: {...} }
+              const pieces = item.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
               return (
                 <TouchableOpacity
                   style={styles.card}
@@ -99,18 +137,20 @@ export default function OutfitsScreen() {
                   activeOpacity={0.85}
                 >
                   <View style={styles.cardImage}>
-                    {/* Gradient background */}
-                    <LinearGradient
-                      colors={['#F9F8F6', '#F0EDE6']}
-                      style={styles.cardGradient}
-                    />
-                    {/* Multi image collage */}
+                    <LinearGradient colors={['#F9F8F6', '#F0EDE6']} style={styles.cardGradient} />
                     <View style={styles.emojiLayout}>
-                      {pieces.slice(0, 3).map((p, i) => (
-                        <View key={p.id} style={styles.outfitImageWrap}>
-                          <Image source={p.image} style={styles.outfitImage} resizeMode="cover" />
+                      {pieces.slice(0, 3).map((p: any, i: number) => (
+                        <View key={i} style={styles.outfitImageWrap}>
+                          {p.imageUrl ? (
+                            <Image source={{ uri: p.imageUrl }} style={styles.outfitImage} resizeMode="cover" />
+                          ) : (
+                            <Ionicons name="shirt-outline" size={20} color="#999" />
+                          )}
                         </View>
                       ))}
+                      {pieces.length === 0 && (
+                        <Ionicons name="layers-outline" size={36} color="#ccc" />
+                      )}
                     </View>
                     {item.aiGenerated && (
                       <View style={styles.aiBadge}>
@@ -120,22 +160,15 @@ export default function OutfitsScreen() {
                     )}
                   </View>
                   <View style={styles.cardInfo}>
-                    <Text style={styles.cardName} numberOfLines={1}>
-                      {item.name.toUpperCase()}
-                    </Text>
+                    <Text style={styles.cardName} numberOfLines={1}>{item.name?.toUpperCase()}</Text>
                     <Text style={styles.cardOcc}>{item.occasion}</Text>
                     <View style={styles.ratingRow}>
                       <View style={styles.stars}>
-                        {[1, 2, 3, 4, 5].map(s => (
-                          <Ionicons
-                            key={s}
-                            name={s <= Math.floor(item.rating) ? 'star' : 'star-outline'}
-                            size={10}
-                            color={Colors.accent}
-                          />
+                        {[1,2,3,4,5].map(s => (
+                          <Ionicons key={s} name={s <= Math.floor(item.rating || 0) ? 'star' : 'star-outline'} size={10} color={Colors.accent} />
                         ))}
                       </View>
-                      <Text style={styles.ratingText}>{item.rating}</Text>
+                      <Text style={styles.ratingText}>{item.rating || 0}</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -144,14 +177,15 @@ export default function OutfitsScreen() {
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Ionicons name="layers-outline" size={56} color={Colors.textMuted} style={styles.emptyIcon} />
-                <Text style={styles.emptyTitle}>NO OUTFITS</Text>
-                <Text style={styles.emptySub}>Create your first look</Text>
-                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/add-item')}>
-                  <Text style={styles.emptyBtnText}>CREATE OUTFIT</Text>
+                <Text style={styles.emptyTitle}>NO OUTFITS YET</Text>
+                <Text style={styles.emptySub}>Ask the AI Stylist to create one</Text>
+                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/(tabs)/ai-stylist')}>
+                  <Text style={styles.emptyBtnText}>AI GENERATE</Text>
                 </TouchableOpacity>
               </View>
             }
           />
+          )}
         </>
       ) : (
         <ScrollView
@@ -163,9 +197,9 @@ export default function OutfitsScreen() {
             <Text style={styles.plannerHeaderText}>WEEKLY OUTFIT SCHEDULE</Text>
           </View>
           {DAYS.map((day, i) => {
-            const outfit = OUTFITS[i % OUTFITS.length];
-            const isToday = i === 2;
-            const pieces = CLOTHING_ITEMS.filter(c => outfit.items.includes(c.id));
+            const outfit = outfits[i % Math.max(outfits.length, 1)];
+            const isToday = i === new Date().getDay() - 1;
+            const pieces = outfit?.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
             return (
               <TouchableOpacity
                 key={day}
@@ -176,17 +210,27 @@ export default function OutfitsScreen() {
                   <Text style={[styles.dayText, isToday && styles.dayTextToday]}>{day}</Text>
                 </View>
                 <View style={[styles.planCard, isToday && styles.planCardToday]}>
-                  <View style={styles.planImages}>
-                    {pieces.slice(0, 3).map((p, j) => (
-                      <View key={j} style={styles.planImageWrap}>
-                         <Image source={p.image} style={styles.planImage} resizeMode="cover" />
+                  {outfit ? (
+                    <>
+                      <View style={styles.planImages}>
+                        {pieces.slice(0, 3).map((p: any, j: number) => (
+                          <View key={j} style={styles.planImageWrap}>
+                            {p?.imageUrl ? (
+                              <Image source={{ uri: p.imageUrl }} style={styles.planImage} resizeMode="cover" />
+                            ) : (
+                              <Ionicons name="shirt-outline" size={16} color="#999" />
+                            )}
+                          </View>
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                  <View style={styles.planInfo}>
-                    <Text style={styles.planName}>{outfit.name.toUpperCase()}</Text>
-                    <Text style={styles.planOcc}>{outfit.occasion}</Text>
-                  </View>
+                      <View style={styles.planInfo}>
+                        <Text style={styles.planName}>{outfit.name?.toUpperCase()}</Text>
+                        <Text style={styles.planOcc}>{outfit.occasion}</Text>
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={styles.planOcc}>No outfit planned</Text>
+                  )}
                   {isToday && (
                     <View style={styles.todayBadge}>
                       <Text style={styles.todayText}>TODAY</Text>

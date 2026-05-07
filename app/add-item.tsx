@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -114,7 +115,9 @@ export default function AddItemScreen() {
       const imageUrl = uploadData.url;
 
       // 2. Save to database
-      const userId = 'cmov05vfc0000zjtlv91cfopo';
+      const storedUser = await AsyncStorage.getItem('user');
+      const userId = storedUser ? JSON.parse(storedUser).id : null;
+      if (!userId) throw new Error('Not logged in');
 
       const saveRes = await fetch(`${BACKEND_URL}/api/clothes`, {
         method: 'POST',

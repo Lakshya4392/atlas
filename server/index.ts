@@ -2,12 +2,28 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
+import Replicate from 'replicate';
+import { fal } from '@fal-ai/client';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import { Readable } from 'stream';
 
 const prisma = new PrismaClient();
 const app = express();
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
+
+// fal.ai config for virtual try-on
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
+
+if (process.env.REPLICATE_API_TOKEN) {
+  console.log('✅ Replicate Token Loaded (starts with:', process.env.REPLICATE_API_TOKEN.substring(0, 5), '...)');
+} else {
+  console.log('❌ Replicate Token MISSING in .env');
+}
 
 app.use(cors());
 app.use(express.json());
@@ -119,6 +135,87 @@ app.get('/api/outfits/:userId', async (req, res) => {
   }
 });
 
+// ── Save AI-Generated Outfit ──
+app.post('/api/outfits', async (req, res) => {
+  try {
+    const { userId, name, occasion, itemIds, aiGenerated, weather } = req.body;
+    if (!userId || !name || !itemIds?.length) {
+      return res.status(400).json({ success: false, error: 'userId, name, and itemIds are required' });
+    }
+    const outfit = await prisma.outfit.create({
+      data: {
+        userId,
+        name,
+        occasion: occasion || 'Casual',
+        aiGenerated: aiGenerated || false,
+        weather: weather || '',
+        items: {
+          create: itemIds.map((id: string) => ({ clothingItemId: id })),
+        },
+      },
+      include: { items: { include: { clothingItem: true } } },
+    });
+    res.json({ success: true, outfit });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ── Get User Stats ──
+app.get('/api/user/:userId/stats', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const [user, clothesCount, outfitsCount, favorites] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.clothingItem.count({ where: { userId } }),
+      prisma.outfit.count({ where: { userId } }),
+      prisma.clothingItem.count({ where: { userId, favorite: true } }),
+    ]);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    res.json({
+      success: true,
+      stats: {
+        clothesCount,
+        outfitsCount,
+        favoritesCount: favorites,
+        streak: user.streak,
+        level: user.level,
+        style: user.style,
+      },
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ── Update Clothing Item (favorite, wearCount) ──
+app.patch('/api/clothes/:id', async (req, res) => {
+  try {
+    const { favorite, wearCount } = req.body;
+    const item = await prisma.clothingItem.update({
+      where: { id: req.params.id },
+      data: {
+        ...(favorite !== undefined && { favorite }),
+        ...(wearCount !== undefined && { wearCount }),
+        ...(wearCount !== undefined && { lastWorn: new Date() }),
+      },
+    });
+    res.json({ success: true, item });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ── Delete Clothing Item ──
+app.delete('/api/clothes/:id', async (req, res) => {
+  try {
+    await prisma.clothingItem.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // ── Upload to Cloudinary ──
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   try {
@@ -170,6 +267,180 @@ app.post('/api/clothes', async (req, res) => {
 
 // ── Start Server ──
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+
+// Update user avatar
+app.put('/api/user/:id/avatar', async (req, res) => {
+  const { id } = req.params;
+  const { avatarUrl } = req.body;
+  try {
+    const user = await prisma.user.update({
+      where: { id },
+      data: { avatar: avatarUrl },
+    });
+    res.json({ success: true, user });
+  } catch (error) {
+    console.error('Update avatar error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update avatar' });
+  }
+});
+
+// AI Virtual Try-On Endpoint — NVIDIA Pipeline
+// Step 1: Garment image → NVIDIA VLM → text description
+// Step 2: User photo + description → NVIDIA Flux edit → result
+app.post('/api/try-on', async (req, res) => {
+  const { garm_img, human_img, description } = req.body;
+
+  const NVIDIA_KEY = process.env.NVIDIA_API_KEY;
+
+  if (!NVIDIA_KEY) {
+    return res.status(400).json({ success: false, error: 'NVIDIA_API_KEY not configured.' });
+  }
+
+  if (!garm_img || !human_img) {
+    return res.status(400).json({ success: false, error: 'garm_img and human_img are required' });
+  }
+
+  try {
+    console.log('🚀 NVIDIA Try-On Pipeline Starting...');
+
+    // ── Step 1: Describe the garment using NVIDIA VLM ──
+    console.log('👁️  Step 1: Describing garment with NVIDIA VLM...');
+
+    let garmentDescription = description || '';
+
+    try {
+      const visionRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NVIDIA_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'microsoft/phi-3.5-vision-instruct',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: { url: garm_img },
+                },
+                {
+                  type: 'text',
+                  text: 'Describe this clothing item in detail for a fashion AI. Include: garment type, color, fabric texture, fit style, notable design details (buttons, patterns, collar, sleeves). Be specific and concise. Max 2 sentences.',
+                },
+              ],
+            },
+          ],
+          max_tokens: 150,
+          temperature: 0.3,
+        }),
+      });
+
+      if (visionRes.ok) {
+        const visionData = await visionRes.json();
+        garmentDescription = visionData.choices?.[0]?.message?.content?.trim() || description;
+        console.log('✅ Garment described:', garmentDescription);
+      } else {
+        console.warn('⚠️ VLM failed, using fallback description:', description);
+      }
+    } catch (visionErr: any) {
+      console.warn('⚠️ VLM error, using fallback:', visionErr.message);
+    }
+
+    // ── Step 2: Edit user photo with NVIDIA Flux ──
+    console.log('🎨 Step 2: Applying garment to user photo with NVIDIA Flux...');
+
+    const editPrompt = `The person in this photo is now wearing: ${garmentDescription}. Keep the person's face, body, pose, and background exactly the same. Only change the clothing to match the description. Photorealistic, high quality fashion photo.`;
+
+    const fluxRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NVIDIA_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'black-forest-labs/flux.2-klein-4b',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: human_img },
+              },
+              {
+                type: 'text',
+                text: editPrompt,
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+        temperature: 0.2,
+      }),
+    });
+
+    if (!fluxRes.ok) {
+      const errText = await fluxRes.text();
+      console.error('❌ Flux error:', errText);
+      throw new Error(`NVIDIA Flux error ${fluxRes.status}: ${errText}`);
+    }
+
+    const fluxData = await fluxRes.json();
+
+    // Flux returns base64 image in content
+    const content = fluxData.choices?.[0]?.message?.content;
+    console.log('Flux response content type:', typeof content);
+
+    // Extract image URL or base64
+    let resultUrl = '';
+
+    if (typeof content === 'string' && content.startsWith('data:image')) {
+      // base64 — upload to Cloudinary
+      console.log('📤 Uploading base64 result to Cloudinary...');
+      const uploadResult = await new Promise<string>((resolve, reject) => {
+        cloudinary.uploader.upload(content, { folder: 'atla_tryon' }, (err, result) => {
+          if (err) reject(err);
+          else resolve(result?.secure_url || '');
+        });
+      });
+      resultUrl = uploadResult;
+    } else if (typeof content === 'string' && content.startsWith('http')) {
+      resultUrl = content;
+    } else if (Array.isArray(content)) {
+      // content array format
+      for (const part of content) {
+        if (part.type === 'image_url') {
+          resultUrl = part.image_url?.url || '';
+          break;
+        } else if (part.type === 'text' && part.text?.startsWith('data:image')) {
+          // upload base64
+          const uploadResult = await new Promise<string>((resolve, reject) => {
+            cloudinary.uploader.upload(part.text, { folder: 'atla_tryon' }, (err, result) => {
+              if (err) reject(err);
+              else resolve(result?.secure_url || '');
+            });
+          });
+          resultUrl = uploadResult;
+          break;
+        }
+      }
+    }
+
+    if (!resultUrl) {
+      console.error('❌ No image in Flux response:', JSON.stringify(fluxData).substring(0, 500));
+      throw new Error('No image returned from NVIDIA Flux');
+    }
+
+    console.log('✅ Try-On Complete:', resultUrl);
+    res.json({ success: true, url: resultUrl });
+
+  } catch (error: any) {
+    console.error('❌ NVIDIA Try-On Error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('');

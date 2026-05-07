@@ -1,56 +1,110 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// AI Stylist — Groq with multi-model fallback chain
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// Initialize the Gemini SDK. If key is missing, we will catch it in the function.
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY || 'dummy_key');
+// Fallback chain — tries each model in order until one works
+const MODELS = [
+  'llama-3.1-8b-instant',       // fast, separate quota
+  'mixtral-8x7b-32768',         // different quota pool
+  'gemma2-9b-it',               // Google's Gemma via Groq
+  'llama3-8b-8192',             // older llama, separate limit
+  'llama-3.3-70b-versatile',    // original (may be rate limited)
+];
 
-export async function generateOutfitSuggestion(
-  prompt: string, 
-  wardrobe: any[], 
-  weather: any, 
-  profile: any
-): Promise<string> {
-  if (!GEMINI_API_KEY) {
-    console.warn("No EXPO_PUBLIC_GEMINI_API_KEY found. Falling back to mock AI response.");
-    return "This is a mock AI response. Please add your Gemini API key to the .env file to see real suggestions based on your wardrobe: " + wardrobe.map(w => w.name).join(', ');
-  }
+function buildPrompt(prompt: string, wardrobe: any[], weather: any, profile: any) {
+  return {
+    system: `You are the Alta Daily AI Fashion Stylist, expert in minimal luxury (Fear of God, Loro Piana aesthetic).
+Return ONLY a raw JSON object — no markdown, no backticks, no explanation.
 
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+User Style: ${profile.style}
+Weather: ${weather.temp}°C, ${weather.condition}
+Wardrobe: ${JSON.stringify(wardrobe.map(w => ({ id: w.id, name: w.name, color: w.color, category: w.category })))}
 
-    const systemPrompt = `
-You are the Alta Daily AI Fashion Stylist, an expert in minimal luxury (Fear of God, Loro Piana aesthetic).
-You MUST return your response as a RAW JSON object.
-
-User Style Preference: ${profile.style}
-Current Weather: ${weather.temp}°C, ${weather.condition}
-Available Wardrobe Items: ${JSON.stringify(wardrobe.map(w => ({ id: w.id, name: w.name, color: w.color, category: w.category })))}
-
-JSON Schema:
+Return this exact JSON shape:
 {
-  "outfit": [
-    { "id": "item_id_from_wardrobe", "reason": "why this piece" }
-  ],
-  "stylingAdvice": "concise styling tip",
-  "weatherContext": "brief weather mention (e.g., CHILLY & RAINY | 14°C)",
-  "idealAddition": "one high-end item not in their closet that would perfect the look"
+  "outfit": [{ "id": "wardrobe_item_id", "reason": "why this piece" }],
+  "stylingAdvice": "1-2 sentence styling tip",
+  "weatherContext": "e.g. CHILLY & RAINY | 14°C",
+  "idealAddition": "one luxury item not in their closet"
 }
 
-IMPORTANT: 
-1. Use ONLY the IDs from the 'Available Wardrobe Items' list.
-2. If the wardrobe is empty, suggest a hypothetical outfit but return empty 'id' fields.
-3. Return ONLY the JSON. No markdown backticks.
-    `;
+Rules: Only use IDs from Wardrobe. If empty wardrobe, return empty outfit array. Return ONLY JSON.`,
+    user: prompt,
+  };
+}
 
-    const result = await model.generateContent(systemPrompt + "\nUser request: " + prompt);
-    const responseText = result.response.text().trim();
-    
-    // Attempt to extract JSON even if Gemini adds backticks
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    return jsonMatch ? jsonMatch[0] : responseText;
-  } catch (e) {
-    console.error("Gemini AI API failed:", e);
-    return "I'm currently unable to access the styling engine. Please try again later.";
+async function callGroq(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  const response = await fetch(GROQ_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 512,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    const isRateLimit = response.status === 429;
+    throw { isRateLimit, message: err?.error?.message || `HTTP ${response.status}` };
   }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content?.trim() || '';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  return jsonMatch ? jsonMatch[0] : text;
+}
+
+export async function generateOutfitSuggestion(
+  prompt: string,
+  wardrobe: any[],
+  weather: any,
+  profile: any
+): Promise<string> {
+  if (!GROQ_API_KEY) {
+    return JSON.stringify({
+      outfit: [],
+      stylingAdvice: 'Add your Groq API key to .env to get real AI styling suggestions!',
+      weatherContext: 'API KEY MISSING',
+      idealAddition: 'A GROQ API KEY — free at console.groq.com',
+    });
+  }
+
+  const { system, user } = buildPrompt(prompt, wardrobe, weather, profile);
+
+  for (const model of MODELS) {
+    try {
+      console.log(`Trying Groq model: ${model}...`);
+      const result = await callGroq(model, system, user);
+      console.log(`✅ Success with ${model}`);
+      return result;
+    } catch (e: any) {
+      if (e.isRateLimit) {
+        console.warn(`⚠️ ${model} rate limited, trying next...`);
+        continue; // try next model
+      }
+      // Non-rate-limit error — still try next
+      console.warn(`⚠️ ${model} failed: ${e.message}, trying next...`);
+      continue;
+    }
+  }
+
+  // All models exhausted
+  console.error('All Groq models rate limited or failed.');
+  return JSON.stringify({
+    outfit: [],
+    stylingAdvice: 'All AI models are busy right now. Please try again in a few minutes.',
+    weatherContext: 'ENGINE BUSY',
+    idealAddition: 'TRY AGAIN IN 5 MIN',
+  });
 }

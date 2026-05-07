@@ -4,6 +4,7 @@ import {
   TextInput, FlatList, Dimensions, Image, ActivityIndicator, Platform, RefreshControl
 } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -36,9 +37,16 @@ export default function ClosetScreen() {
   };
 
   const BACKEND_URL = getBackendUrl();
-  const userId = 'cmov05vfc0000zjtlv91cfopo';
+  const [userId, setUserId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('user').then(stored => {
+      if (stored) setUserId(JSON.parse(stored).id);
+    });
+  }, []);
 
   const fetchItems = async () => {
+    if (!userId) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/clothes/${userId}`);
       const data = await res.json();
@@ -60,8 +68,8 @@ export default function ClosetScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchItems();
-    }, [])
+      if (userId) fetchItems();
+    }, [userId])
   );
 
   const onRefresh = () => {
