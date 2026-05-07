@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, KeyboardAvoidingView, Platform, Dimensions, ActivityIndicator
+  TextInput, KeyboardAvoidingView, Platform, Dimensions, ActivityIndicator, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -38,9 +38,21 @@ export default function AIStylistScreen() {
   };
 
   const BACKEND_URL = getBackendUrl();
-  const userId = 'cmov05vfc0000zjtlv91cfopo';
+  const [userId, setUserId] = useState<string | null>(null);
 
   React.useEffect(() => {
+    const initialize = async () => {
+      const stored = await AsyncStorage.getItem('user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setUserId(u.id);
+      }
+    };
+    initialize();
+  }, []);
+
+  React.useEffect(() => {
+    if (!userId) return;
     const fetchWardrobe = async () => {
       try {
         const res = await fetch(`${BACKEND_URL}/api/clothes/${userId}`);
@@ -53,7 +65,7 @@ export default function AIStylistScreen() {
       }
     };
     fetchWardrobe();
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -146,7 +158,13 @@ export default function AIStylistScreen() {
                         {msg.outfit.map((o: any, idx: number) => (
                           <View key={idx} style={styles.outfitCard}>
                             <View style={styles.cardImageWrapper}>
-                              <Image source={{ uri: o.item.imageUrl }} style={styles.cardImage} />
+                              {o.item.imageUrl ? (
+                                <Image source={{ uri: o.item.imageUrl }} style={styles.cardImage} />
+                              ) : (
+                                <View style={styles.placeholderImage}>
+                                  <Ionicons name="shirt-outline" size={32} color={Colors.textTertiary} />
+                                </View>
+                              )}
                             </View>
                             <Text style={styles.cardItemName}>{o.item.name.toUpperCase()}</Text>
                           </View>
@@ -325,6 +343,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  placeholderImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardItemName: {
     fontSize: 9,
