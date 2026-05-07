@@ -232,7 +232,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       }
     );
 
-    Readable.from(req.file.buffer).pipe(stream);
+    Readable.from((req as any).file.buffer).pipe(stream);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -336,7 +336,7 @@ app.post('/api/try-on', async (req, res) => {
         });
 
         if (visionRes.ok) {
-          const visionData = await visionRes.json();
+          const visionData = (await visionRes.json()) as any;
           const desc = visionData.choices?.[0]?.message?.content?.trim();
           if (desc) {
             garmentDescription = desc;
@@ -422,7 +422,7 @@ app.post('/api/try-on', async (req, res) => {
       throw new Error(`Vertex AI error ${vertexRes.status}: ${errText}`);
     }
 
-    const vertexData = await vertexRes.json();
+    const vertexData = (await vertexRes.json()) as any;
     const resultBase64 = vertexData.predictions?.[0]?.bytesBase64Encoded;
 
     if (!resultBase64) {
@@ -453,13 +453,17 @@ app.post('/api/try-on', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('═══════════════════════════════════════════');
-  console.log(`  🚀 Alta Daily Backend`);
-  console.log(`  Running on http://0.0.0.0:${PORT}`);
-  console.log(`  Test DB:  http://localhost:${PORT}/api/test`);
-  console.log('═══════════════════════════════════════════');
-  console.log('');
-  console.log('Waiting for requests...');
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('═══════════════════════════════════════════');
+    console.log(`  🚀 Alta Daily Backend`);
+    console.log(`  Running on http://0.0.0.0:${PORT}`);
+    console.log(`  Test DB:  http://localhost:${PORT}/api/test`);
+    console.log('═══════════════════════════════════════════');
+    console.log('');
+    console.log('Waiting for requests...');
+  });
+}
+
+export default app;

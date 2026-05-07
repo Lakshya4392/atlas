@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+
+  # Note: Mobile (Expo) is typically run outside Docker during development
+  # but can be containerized for web or CI purposes.
