@@ -8,17 +8,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { CLOTHING_ITEMS } from '../../constants/data';
 
 const { width } = Dimensions.get('window');
-
-const COLORS = {
-  bg: '#FFFFFF',
-  text: '#000000',
-  textMuted: '#666666',
-  cardBg: '#F5F5F5',
-  border: '#EAEAEA',
-};
+const COLUMN_WIDTH = (width - 40 - 16) / 2;
 
 const getBackendUrl = () => {
   const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
@@ -27,6 +22,41 @@ const getBackendUrl = () => {
     return `http://${ip}:3000`;
   }
   return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
+const ItemCard = ({ item, index }: { item: any, index: number }) => {
+  // Staggered height effect for Pinterest style
+  const isTall = index % 3 === 0;
+  const cardHeight = isTall ? 280 : 220;
+
+  return (
+    <TouchableOpacity
+      style={[styles.itemCard, { height: cardHeight + 60 }]}
+      activeOpacity={0.85}
+      onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
+    >
+      <View style={[styles.imageContainer, { height: cardHeight }]}>
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
+        ) : item.image ? (
+          <Image source={item.image} style={styles.image} resizeMode="cover" />
+        ) : (
+          <View style={styles.placeholder}>
+            <Ionicons name="shirt-outline" size={32} color="#CCC" />
+          </View>
+        )}
+        {item.favorite && (
+          <View style={styles.favBadge}>
+            <Ionicons name="heart" size={10} color="#000" />
+          </View>
+        )}
+      </View>
+      <View style={styles.info}>
+        <Text style={styles.name} numberOfLines={1}>{item.name?.toUpperCase()}</Text>
+        <Text style={styles.brand}>{item.brand}</Text>
+      </View>
+    </TouchableOpacity>
+  );
 };
 
 export default function DashboardScreen() {
@@ -45,11 +75,11 @@ export default function DashboardScreen() {
       const res = await fetch(`${BACKEND_URL}/api/clothes/${id}`);
       const data = await res.json();
       if (data.success) {
-        setItems(data.items.map((i: any) => ({ ...i, image: { uri: i.imageUrl } })));
+        setItems(data.items || []);
+      } else {
+        setItems(CLOTHING_ITEMS);
       }
     } catch (e) {
-      console.error('Dashboard fetch error:', e);
-      // Fallback to mock data if server not running
       setItems(CLOTHING_ITEMS);
     } finally {
       setLoading(false);
@@ -67,6 +97,7 @@ export default function DashboardScreen() {
           fetchData(u.id);
         } else {
           setLoading(false);
+          setItems(CLOTHING_ITEMS);
         }
       });
     }, [])
@@ -80,7 +111,7 @@ export default function DashboardScreen() {
   const filtered = items.filter(item =>
     !query ||
     item.name?.toLowerCase().includes(query.toLowerCase()) ||
-    item.brand?.toLowerCase().includes(query.toLowerCase())
+    (item.brand && item.brand.toLowerCase().includes(query.toLowerCase()))
   );
 
   return (
@@ -88,87 +119,98 @@ export default function DashboardScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
       >
         {/* ── Header ── */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>ATLA DAILY</Text>
-          {userName ? <Text style={styles.headerSub}>Welcome, {userName.split(' ')[0]}</Text> : null}
+          <Text style={styles.headerSub}>WARDROBE OS</Text>
         </View>
 
         {/* ── Search Bar ── */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search your closet"
-            placeholderTextColor={COLORS.textMuted}
-            value={query}
-            onChangeText={setQuery}
-          />
+          <View style={styles.searchBar}>
+            <Ionicons name="search-outline" size={18} color="#999" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search your pieces..."
+              placeholderTextColor="#999"
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
         </View>
 
-        {/* ── Hero ── */}
-        <TouchableOpacity style={styles.heroContainer} activeOpacity={0.9} onPress={() => router.push('/add-item')}>
-          <View style={styles.heroImageWrapper}>
-            <Image
-              source={require('../../assets/images/denim_jacket.png')}
-              style={styles.heroImage}
-              resizeMode="cover"
-            />
-            <View style={styles.heroOverlay}>
-              <Text style={styles.heroText}>+ ADD TO CLOSET</Text>
+        {/* ── Hero section ── */}
+        <TouchableOpacity 
+          style={styles.heroBanner} 
+          activeOpacity={0.9} 
+          onPress={() => router.push('/(tabs)/ai-stylist')}
+        >
+          <Image 
+            source={require('../../assets/images/denim_jacket.png')} 
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.heroOverlay}
+          >
+            <View style={styles.heroContent}>
+              <Text style={styles.heroTag}>FEATURED</Text>
+              <Text style={styles.heroTitle}>AI STYLE GUIDE</Text>
+              <Text style={styles.heroSub}>Let ATLA curate your day</Text>
             </View>
-          </View>
+            <View style={styles.heroBtn}>
+              <Ionicons name="sparkles" size={18} color="#000" />
+            </View>
+          </LinearGradient>
         </TouchableOpacity>
 
         {/* ── Section ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>MY WARDROBE</Text>
-          <Text style={styles.sectionCount}>{filtered.length} pieces</Text>
+          <Text style={styles.sectionCount}>{filtered.length} PIECES</Text>
         </View>
 
-        {/* ── Loading ── */}
+        {/* ── Pinterest Masonry Grid ── */}
         {loading ? (
-          <ActivityIndicator size="large" color="#000" style={{ marginTop: 40 }} />
+          <View style={styles.loader}>
+            <ActivityIndicator size="large" color="#000" />
+          </View>
         ) : filtered.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="shirt-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>YOUR CLOSET IS EMPTY</Text>
-            <Text style={styles.emptySub}>Add your first item to get started</Text>
+            <View style={styles.emptyIconBg}>
+              <Ionicons name="shirt-outline" size={40} color="#CCC" />
+            </View>
+            <Text style={styles.emptyTitle}>NO ITEMS</Text>
+            <Text style={styles.emptySub}>Your closet is empty. Add your first item.</Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/add-item')}>
-              <Text style={styles.emptyBtnText}>ADD ITEM</Text>
+              <Text style={styles.emptyBtnText}>ADD PIECE</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          /* ── Grid ── */
-          <View style={styles.grid}>
-            {filtered.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.gridItem}
-                activeOpacity={0.8}
-                onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
-              >
-                <View style={styles.imageCard}>
-                  <Image
-                    source={item.image}
-                    style={styles.productImage}
-                    resizeMode="cover"
-                  />
-                </View>
-                <View style={styles.productInfo}>
-                  <Text style={styles.productName} numberOfLines={2}>{item.name?.toUpperCase()}</Text>
-                  <Text style={styles.productBrand}>{item.brand}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.masonryGrid}>
+            <View style={styles.masonryColumn}>
+              {filtered.filter((_, i) => i % 2 === 0).map((item, idx) => (
+                <ItemCard key={item.id} item={item} index={idx} />
+              ))}
+            </View>
+            <View style={styles.masonryColumn}>
+              {filtered.filter((_, i) => i % 2 !== 0).map((item, idx) => (
+                <ItemCard key={item.id} item={item} index={idx} />
+              ))}
+            </View>
           </View>
         )}
       </ScrollView>
 
-      {/* ── FAB: Add Item ── */}
-      <TouchableOpacity style={styles.fab} onPress={() => router.push('/add-item')} activeOpacity={0.85}>
+      {/* ── FAB ── */}
+      <TouchableOpacity 
+        style={styles.fab} 
+        onPress={() => router.push('/add-item')} 
+        activeOpacity={0.85}
+      >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
@@ -176,122 +218,196 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { paddingBottom: 120 },
+  
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 8,
     alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 20,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: 4,
-    color: COLORS.text,
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: 6,
+    color: '#000',
   },
   headerSub: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-    marginTop: 2,
+    fontSize: 10,
+    color: '#999',
+    fontWeight: '900',
+    marginTop: 4,
+    letterSpacing: 2,
   },
+
   searchContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 24,
-    height: 48,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F5F5F5',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-    marginTop: 12,
+    paddingHorizontal: 20,
+    height: 48,
+    gap: 12,
   },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, height: '100%' },
-  heroContainer: {
-    marginHorizontal: 24,
-    marginBottom: 32,
-    borderRadius: 20,
+  searchInput: { flex: 1, fontSize: 14, color: '#000', fontWeight: '600' },
+
+  heroBanner: {
+    marginHorizontal: 20,
+    height: 240,
+    borderRadius: 32,
     overflow: 'hidden',
-    height: width * 0.55,
+    marginBottom: 32,
+    ...Shadows.lg,
   },
-  heroImageWrapper: { width: '100%', height: '100%', backgroundColor: COLORS.cardBg },
-  heroImage: { width: '100%', height: '100%' },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
   heroOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    height: '60%',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    padding: 24,
   },
-  heroText: {
+  heroContent: {
+    gap: 4,
+  },
+  heroTag: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
     letterSpacing: 2,
+    opacity: 0.8,
   },
+  heroTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  heroSub: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  heroBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.md,
+  },
+
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 16,
-  },
-  sectionTitle: { fontSize: 15, fontWeight: '800', letterSpacing: 1.5, color: COLORS.text },
-  sectionCount: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 20,
-    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  gridItem: {
-    width: (width - 40 - 16) / 2,
-    marginBottom: 24,
-    marginHorizontal: 4,
+  sectionTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 1.5, color: '#000' },
+  sectionCount: { fontSize: 12, color: '#999', fontWeight: '700' },
+
+  masonryGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 16,
   },
-  imageCard: {
+  masonryColumn: {
+    flex: 1,
+    gap: 20,
+  },
+  itemCard: {
     width: '100%',
-    aspectRatio: 0.85,
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 16,
-    marginBottom: 10,
+    backgroundColor: '#fff',
+  },
+  imageContainer: {
+    width: '100%',
+    borderRadius: 24,
+    backgroundColor: '#F9F9F9',
     overflow: 'hidden',
+    position: 'relative',
+    ...Shadows.sm,
   },
-  productImage: { width: '100%', height: '100%' },
-  productInfo: { paddingHorizontal: 4 },
-  productName: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.text,
-    marginBottom: 3,
-    letterSpacing: 0.5,
-    lineHeight: 17,
+  image: {
+    width: '100%',
+    height: '100%',
   },
-  productBrand: { fontSize: 12, fontWeight: '500', color: COLORS.textMuted },
-  empty: {
+  placeholder: {
+    flex: 1,
     alignItems: 'center',
-    paddingTop: 60,
-    gap: 12,
-    paddingBottom: 40,
+    justifyContent: 'center',
   },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text, letterSpacing: 2, marginTop: 8 },
-  emptySub: { fontSize: 13, color: COLORS.textMuted },
+  favBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  info: {
+    paddingTop: 12,
+    paddingHorizontal: 4,
+  },
+  name: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  brand: {
+    fontSize: 11,
+    color: '#999',
+    fontWeight: '600',
+  },
+
+  loader: { paddingTop: 60, alignItems: 'center' },
+  empty: {
+    width: '100%',
+    alignItems: 'center',
+    paddingTop: 40,
+    gap: 12,
+  },
+  emptyIconBg: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 2 },
+  emptySub: { fontSize: 13, color: '#999', textAlign: 'center' },
   emptyBtn: {
     backgroundColor: '#000',
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
-    marginTop: 8,
+    marginTop: 12,
   },
-  emptyBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 1.5 },
+  emptyBtnText: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+
   fab: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 40,
     right: 24,
     width: 56,
     height: 56,
@@ -299,10 +415,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...Shadows.md,
   },
 });

@@ -10,11 +10,10 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: Colors.accent,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: '#000',
+        tabBarInactiveTintColor: '#AAA',
       }}
     >
-      {/* Home — "AD" brand logo */}
       <Tabs.Screen
         name="index"
         options={{
@@ -26,63 +25,53 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Closet — shirt */}
       <Tabs.Screen
         name="closet"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <View style={styles.iconWrap}>
-              <Ionicons
-                name={focused ? 'shirt' : 'shirt-outline'}
-                size={22}
-                color={focused ? Colors.accent : color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? 'shirt' : 'shirt-outline'}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
 
-      {/* AI Stylist — center sparkle */}
       <Tabs.Screen
         name="ai-stylist"
         options={{
           tabBarStyle: { display: 'none' },
           tabBarIcon: ({ focused }) => (
             <View style={[styles.centerIcon, focused && styles.centerIconActive]}>
-              <Ionicons name="sparkles" size={18} color={focused ? '#fff' : Colors.textMuted} />
+              <Ionicons name="sparkles" size={20} color={focused ? '#fff' : '#999'} />
             </View>
           ),
         }}
       />
 
-      {/* Outfits — layers */}
       <Tabs.Screen
         name="outfits"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <View style={styles.iconWrap}>
-              <Ionicons
-                name={focused ? 'layers' : 'layers-outline'}
-                size={22}
-                color={focused ? Colors.accent : color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? 'layers' : 'layers-outline'}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
 
-      {/* Profile — person */}
       <Tabs.Screen
         name="profile"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <View style={styles.iconWrap}>
-              <Ionicons
-                name={focused ? 'person' : 'person-outline'}
-                size={22}
-                color={focused ? Colors.accent : color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? 'person' : 'person-outline'}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
@@ -92,46 +81,40 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: Colors.surface,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    height: Platform.OS === 'ios' ? 92 : 72,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+    borderTopColor: '#F0F0F0',
+    height: Platform.OS === 'ios' ? 90 : 70,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 10,
     paddingTop: 10,
-    ...Shadows.lg,
+    ...Shadows.md,
   },
   brandTab: {
     paddingHorizontal: 4,
   },
   brandTabText: {
-    fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.black,
-    color: Colors.textMuted,
-    letterSpacing: 3,
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#AAA',
+    letterSpacing: 2,
   },
   brandTabTextActive: {
-    color: Colors.accent,
-  },
-  iconWrap: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
+    color: '#000',
   },
   centerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.backgroundAlt,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#EAEAEA',
     marginBottom: 4,
   },
   centerIconActive: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
+    backgroundColor: '#000',
+    borderColor: '#000',
     ...Shadows.md,
   },
 });

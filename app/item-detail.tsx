@@ -134,7 +134,7 @@ export default function ItemDetailScreen() {
             <Text style={styles.tagsLabel}>TAGS</Text>
             <View style={styles.tagsList}>
               {item.tags.map(tag => (
-                <View key={tag} style={styles.tag}>
+                <View key={tag} style={styles.tagPill}>
                   <Text style={styles.tagText}>{tag.toUpperCase()}</Text>
                 </View>
               ))}
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: Spacing.sm,
   },
-  tag: {
+  tagPill: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,

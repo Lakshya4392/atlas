@@ -67,46 +67,50 @@ export default function OutfitsScreen() {
           onPress={() => router.push('/(tabs)/ai-stylist')}
           activeOpacity={0.8}
         >
-          <Ionicons name="sparkles" size={14} color={Colors.accent} />
+          <Ionicons name="sparkles" size={14} color="#fff" />
           <Text style={styles.genBtnText}>AI GENERATE</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── Tabs ── */}
-      <View style={styles.tabs}>
-        {(['outfits', 'planner'] as const).map(t => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-            onPress={() => setTab(t)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'outfits' ? 'MY COLLECTION' : 'WEEK PLANNER'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.tabsContainer}>
+        <View style={styles.tabs}>
+          {(['outfits', 'planner'] as const).map(t => (
+            <TouchableOpacity
+              key={t}
+              style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
+              onPress={() => setTab(t)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+                {t === 'outfits' ? 'COLLECTION' : 'PLANNER'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {tab === 'outfits' ? (
         <>
           {/* ── Occasion filter ── */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.occScroll}
-          >
-            {OCCASIONS.map(o => (
-              <TouchableOpacity
-                key={o}
-                style={[styles.occChip, occ === o && styles.occChipActive]}
-                onPress={() => setOcc(o)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.occText, occ === o && styles.occTextActive]}>{o}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <View style={styles.occFilterWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.occScroll}
+            >
+              {OCCASIONS.map(o => (
+                <TouchableOpacity
+                  key={o}
+                  style={[styles.occChip, occ === o && styles.occChipActive]}
+                  onPress={() => setOcc(o)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.occText, occ === o && styles.occTextActive]}>{o}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
           {/* ── Section label ── */}
           <View style={styles.sectionRow}>
@@ -118,7 +122,9 @@ export default function OutfitsScreen() {
 
           {/* ── Grid ── */}
           {loading ? (
-            <ActivityIndicator size="large" color="#000" style={{ marginTop: 40 }} />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#000" />
+            </View>
           ) : (
           <FlatList
             data={filtered}
@@ -128,7 +134,6 @@ export default function OutfitsScreen() {
             columnWrapperStyle={styles.row}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => {
-              // Real API: items is array of { clothingItem: {...} }
               const pieces = item.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
               return (
                 <TouchableOpacity
@@ -137,38 +142,35 @@ export default function OutfitsScreen() {
                   activeOpacity={0.85}
                 >
                   <View style={styles.cardImage}>
-                    <LinearGradient colors={['#F9F8F6', '#F0EDE6']} style={styles.cardGradient} />
-                    <View style={styles.emojiLayout}>
-                      {pieces.slice(0, 3).map((p: any, i: number) => (
-                        <View key={i} style={styles.outfitImageWrap}>
+                    <View style={styles.imageGrid}>
+                      {pieces.slice(0, 4).map((p: any, i: number) => (
+                        <View key={i} style={[styles.imageThumb, pieces.length === 1 && styles.imageThumbFull]}>
                           {p.imageUrl ? (
-                            <Image source={{ uri: p.imageUrl }} style={styles.outfitImage} resizeMode="cover" />
+                            <Image source={{ uri: p.imageUrl }} style={styles.thumbImg} resizeMode="cover" />
                           ) : (
-                            <Ionicons name="shirt-outline" size={20} color="#999" />
+                            <Ionicons name="shirt-outline" size={16} color="#999" />
                           )}
                         </View>
                       ))}
                       {pieces.length === 0 && (
-                        <Ionicons name="layers-outline" size={36} color="#ccc" />
+                        <Ionicons name="layers-outline" size={32} color="#ccc" />
                       )}
                     </View>
                     {item.aiGenerated && (
                       <View style={styles.aiBadge}>
-                        <Ionicons name="sparkles" size={10} color="#fff" />
+                        <Ionicons name="sparkles" size={8} color="#000" />
                         <Text style={styles.aiBadgeText}>AI</Text>
                       </View>
                     )}
                   </View>
                   <View style={styles.cardInfo}>
                     <Text style={styles.cardName} numberOfLines={1}>{item.name?.toUpperCase()}</Text>
-                    <Text style={styles.cardOcc}>{item.occasion}</Text>
-                    <View style={styles.ratingRow}>
-                      <View style={styles.stars}>
-                        {[1,2,3,4,5].map(s => (
-                          <Ionicons key={s} name={s <= Math.floor(item.rating || 0) ? 'star' : 'star-outline'} size={10} color={Colors.accent} />
-                        ))}
+                    <View style={styles.cardMeta}>
+                      <Text style={styles.cardOcc}>{item.occasion}</Text>
+                      <View style={styles.ratingRow}>
+                        <Ionicons name="star" size={10} color={Colors.accent} />
+                        <Text style={styles.ratingText}>{item.rating || 0}</Text>
                       </View>
-                      <Text style={styles.ratingText}>{item.rating || 0}</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -176,11 +178,13 @@ export default function OutfitsScreen() {
             }}
             ListEmptyComponent={
               <View style={styles.empty}>
-                <Ionicons name="layers-outline" size={56} color={Colors.textMuted} style={styles.emptyIcon} />
-                <Text style={styles.emptyTitle}>NO OUTFITS YET</Text>
-                <Text style={styles.emptySub}>Ask the AI Stylist to create one</Text>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="layers-outline" size={48} color={Colors.textMuted} />
+                </View>
+                <Text style={styles.emptyTitle}>NO LOOKS YET</Text>
+                <Text style={styles.emptySub}>Ask your AI Stylist to curate some looks for you.</Text>
                 <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/(tabs)/ai-stylist')}>
-                  <Text style={styles.emptyBtnText}>AI GENERATE</Text>
+                  <Text style={styles.emptyBtnText}>GENERATE OUTFIT</Text>
                 </TouchableOpacity>
               </View>
             }
@@ -193,12 +197,12 @@ export default function OutfitsScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.plannerHeader}>
-            <Ionicons name="calendar-outline" size={20} color={Colors.accent} />
-            <Text style={styles.plannerHeaderText}>WEEKLY OUTFIT SCHEDULE</Text>
+            <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
+            <Text style={styles.plannerHeaderText}>WEEKLY SCHEDULE</Text>
           </View>
           {DAYS.map((day, i) => {
             const outfit = outfits[i % Math.max(outfits.length, 1)];
-            const isToday = i === new Date().getDay() - 1;
+            const isToday = i === (new Date().getDay() + 6) % 7;
             const pieces = outfit?.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
             return (
               <TouchableOpacity
@@ -229,11 +233,11 @@ export default function OutfitsScreen() {
                       </View>
                     </>
                   ) : (
-                    <Text style={styles.planOcc}>No outfit planned</Text>
+                    <Text style={styles.planEmpty}>No outfit planned</Text>
                   )}
                   {isToday && (
                     <View style={styles.todayBadge}>
-                      <Text style={styles.todayText}>TODAY</Text>
+                      <Text style={styles.todayBadgeText}>TODAY</Text>
                     </View>
                   )}
                 </View>
@@ -247,7 +251,7 @@ export default function OutfitsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
 
   header: {
     flexDirection: 'row',
@@ -258,8 +262,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.lg,
   },
   title: {
-    fontSize: FontSize['3xl'],
-    fontWeight: FontWeight.black,
+    fontSize: 24,
+    fontWeight: '900',
     color: Colors.textPrimary,
     letterSpacing: 2,
   },
@@ -267,63 +271,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#000',
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 10,
     borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.xs,
+    ...Shadows.sm,
   },
   genBtnText: {
-    fontSize: FontSize.xs,
-    color: Colors.accent,
+    fontSize: 10,
+    color: '#fff',
     fontWeight: FontWeight.black,
     letterSpacing: 1,
   },
 
+  tabsContainer: {
+    paddingHorizontal: Spacing['2xl'],
+    marginBottom: Spacing.lg,
+  },
   tabs: {
     flexDirection: 'row',
-    marginHorizontal: Spacing['2xl'],
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: BorderRadius.full,
-    overflow: 'hidden',
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 24,
+    padding: 4,
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    paddingVertical: 10,
     alignItems: 'center',
+    borderRadius: 20,
   },
   tabBtnActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#fff',
+    ...Shadows.xs,
   },
   tabText: {
-    fontSize: FontSize.xs,
+    fontSize: 11,
     color: Colors.textSecondary,
     fontWeight: FontWeight.bold,
     letterSpacing: 1.5,
   },
-  tabTextActive: { color: '#fff' },
+  tabTextActive: { color: '#000' },
 
+  occFilterWrapper: {
+    height: 48,
+    marginBottom: Spacing.xl,
+  },
   occScroll: {
     paddingHorizontal: Spacing['2xl'],
-    gap: Spacing.sm,
-    paddingBottom: Spacing.lg,
+    gap: Spacing.md,
+    alignItems: 'center',
   },
   occChip: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 8,
-    borderRadius: BorderRadius.full,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: '#EAEAEA',
+    backgroundColor: '#fff',
   },
-  occChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  occChipActive: { 
+    backgroundColor: '#000', 
+    borderColor: '#000',
+  },
   occText: {
-    fontSize: FontSize.xs,
+    fontSize: 11,
     color: Colors.textSecondary,
     fontWeight: FontWeight.bold,
     letterSpacing: 1,
@@ -335,231 +346,247 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing['2xl'],
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   sectionLabel: {
-    fontSize: FontSize.lg,
+    fontSize: 14,
     fontWeight: FontWeight.black,
     color: Colors.textPrimary,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   sectionCount: {
-    fontSize: FontSize.sm,
+    fontSize: 12,
     color: Colors.textMuted,
-    fontWeight: FontWeight.medium,
+    fontWeight: '600',
   },
 
-  grid: { paddingHorizontal: Spacing['2xl'], paddingBottom: 40 },
-  row: { gap: Spacing.md, marginBottom: Spacing.lg },
+  grid: { paddingHorizontal: 20, paddingBottom: 40 },
+  row: { gap: 16, marginBottom: 20 },
 
   card: {
-    width: CARD_W,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.xs,
+    width: (width - 40 - 16) / 2,
+    backgroundColor: '#fff',
   },
   cardImage: {
-    height: CARD_W * 1.15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  cardGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  emojiLayout: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-  },
-  outfitImageWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F5F5F5',
+    width: '100%',
+    aspectRatio: 0.85,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 20,
+    padding: 10,
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  outfitImage: { width: '100%', height: '100%' },
+  imageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageThumb: {
+    width: '46%',
+    height: '46%',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageThumbFull: {
+    width: '90%',
+    height: '90%',
+  },
+  thumbImg: { width: '100%', height: '100%' },
   aiBadge: {
     position: 'absolute',
     top: 10,
-    left: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.xs,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    ...Shadows.xs,
   },
   aiBadgeText: {
-    fontSize: FontSize['2xs'] ?? 9,
-    color: '#fff',
+    fontSize: 8,
+    color: '#000',
     fontWeight: FontWeight.black,
     letterSpacing: 1,
   },
   cardInfo: {
-    padding: Spacing.md,
-    gap: 3,
+    paddingTop: 10,
+    paddingHorizontal: 4,
   },
   cardName: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.bold,
+    fontSize: 12,
+    fontWeight: '800',
     color: Colors.textPrimary,
+    marginBottom: 4,
     letterSpacing: 0.5,
   },
-  cardOcc: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  cardMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardOcc: { fontSize: 11, color: Colors.textSecondary, fontWeight: '500' },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    marginTop: 2,
+    gap: 3,
   },
-  stars: {
-    flexDirection: 'row',
-    gap: 1,
-  },
-  ratingText: { fontSize: FontSize.sm, color: Colors.accent, fontWeight: FontWeight.semibold },
+  ratingText: { fontSize: 11, color: Colors.textPrimary, fontWeight: '700' },
 
   empty: {
     alignItems: 'center',
-    paddingTop: 100,
-    gap: Spacing.md,
-    paddingBottom: 60,
+    paddingTop: 80,
+    paddingHorizontal: 40,
   },
-  emptyIcon: {
-    marginBottom: Spacing.md,
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.black,
+    fontSize: 18,
+    fontWeight: '900',
     color: Colors.textPrimary,
-    letterSpacing: 2,
+    letterSpacing: 3,
+    marginBottom: 8,
   },
   emptySub: {
-    fontSize: FontSize.md,
+    fontSize: 14,
     color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
   },
   emptyBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    marginTop: Spacing.md,
+    backgroundColor: '#000',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 24,
   },
   emptyBtnText: {
-    fontSize: FontSize.sm,
+    fontSize: 12,
     color: '#fff',
     fontWeight: FontWeight.black,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+  },
+
+  loadingContainer: {
+    paddingTop: 60,
+    alignItems: 'center',
   },
 
   // ── Week Planner ──
   plannerContent: {
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.lg,
-    gap: Spacing.sm,
     paddingBottom: 40,
   },
   plannerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    gap: 8,
+    marginBottom: 24,
   },
   plannerHeaderText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
+    fontSize: 12,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.black,
+    letterSpacing: 2,
   },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 16,
+    marginBottom: 16,
   },
+  planRowToday: {},
   dayBox: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surface,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
   dayBoxToday: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: '#000',
   },
   dayText: {
-    fontSize: FontSize.sm,
+    fontSize: 12,
     color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1,
+    fontWeight: '800',
   },
   dayTextToday: { color: '#fff' },
   planCard: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
-    gap: Spacing.md,
-    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 16,
+    gap: 12,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#F0F0F0',
   },
   planCardToday: {
-    borderColor: Colors.primary,
+    borderColor: '#000',
     borderWidth: 1.5,
   },
   planImages: {
     flexDirection: 'row',
-    gap: Spacing.xs,
+    gap: 4,
   },
   planImageWrap: {
     width: 32,
     height: 32,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    backgroundColor: '#F9F9F9',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   planImage: { width: '100%', height: '100%' },
-  planInfo: { flex: 1, gap: 2 },
+  planInfo: { flex: 1 },
   planName: {
-    fontSize: FontSize.sm,
+    fontSize: 11,
     color: Colors.textPrimary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    marginBottom: 2,
   },
   planOcc: {
-    fontSize: FontSize['2xs'] ?? 11,
-    color: Colors.textSecondary,
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  planEmpty: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
   },
   todayBadge: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.full,
+    backgroundColor: '#000',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  todayText: {
-    fontSize: FontSize['2xs'] ?? 10,
+  todayBadgeText: {
+    fontSize: 8,
     color: '#fff',
-    fontWeight: FontWeight.black,
-    letterSpacing: 1,
+    fontWeight: '900',
   },
 });

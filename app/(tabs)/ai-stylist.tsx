@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, KeyboardAvoidingView, Platform, Dimensions, ActivityIndicator, Image, Modal
+  TextInput, KeyboardAvoidingView, Platform, Dimensions, ActivityIndicator, Image, Modal, FlatList, Animated
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Constants from 'expo-constants';
@@ -14,6 +13,14 @@ import { USER_PROFILE } from '../../constants/data';
 import { Colors, Shadows } from '../../constants/theme';
 import { generateOutfitSuggestion } from '../../services/ai';
 import { fetchWeather } from '../../services/weather';
+
+// Chat session type
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: any[];
+  createdAt: string;
+}
 
 const { width, height } = Dimensions.get('window');
 
@@ -36,13 +43,18 @@ export default function AIStylistScreen() {
   const [tryOnLoading, setTryOnLoading] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
-  const scrollRef = useRef<ScrollView>(null);
-
-  // Dynamically resolve the backend URL
-  const BACKEND_URL = getBackendUrl();
   const [userId, setUserId] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  // Chat history state
+  const [showHistory, setShowHistory] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const BACKEND_URL = getBackendUrl();
+
+  // ── Load user + wardrobe + chat history ──
+  useEffect(() => {
     const initialize = async () => {
       const stored = await AsyncStorage.getItem('user');
       if (stored) {
@@ -51,63 +63,113 @@ export default function AIStylistScreen() {
         setUser(u);
         setUserAvatar(u.avatar);
       }
+      // Load chat history
+      const history = await AsyncStorage.getItem('chat_sessions');
+      if (history) setChatSessions(JSON.parse(history));
     };
     initialize();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!userId) return;
-    const fetchWardrobe = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/clothes/${userId}`);
-        const data = await res.json();
-        if (data.success) {
-          setWardrobe(data.items);
-        }
-      } catch (error) {
-        console.error('Fetch wardrobe error:', error);
-      }
-    };
-    fetchWardrobe();
+    fetch(`${BACKEND_URL}/api/clothes/${userId}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setWardrobe(d.items); })
+      .catch(e => console.error('Fetch wardrobe error:', e));
   }, [userId]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollToEnd({ animated: true });
-    }
+    if (scrollRef.current) scrollRef.current.scrollToEnd({ animated: true });
   }, [messages, loading]);
 
+  // ── Save current session to history ──
+  const saveSession = useCallback(async (msgs: any[], sessionId: string, firstUserMsg?: string) => {
+    if (msgs.length === 0) return;
+    const title = firstUserMsg
+      ? firstUserMsg.substring(0, 40) + (firstUserMsg.length > 40 ? '...' : '')
+      : 'Style Chat';
+
+    const session: ChatSession = {
+      id: sessionId,
+      title,
+      messages: msgs,
+      createdAt: new Date().toISOString(),
+    };
+
+    const existing = await AsyncStorage.getItem('chat_sessions');
+    const sessions: ChatSession[] = existing ? JSON.parse(existing) : [];
+    const idx = sessions.findIndex(s => s.id === sessionId);
+    if (idx >= 0) sessions[idx] = session;
+    else sessions.unshift(session);
+
+    // Keep only last 20 sessions
+    const trimmed = sessions.slice(0, 20);
+    await AsyncStorage.setItem('chat_sessions', JSON.stringify(trimmed));
+    setChatSessions(trimmed);
+  }, []);
+
+  // ── Send message ──
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
     const userMsg = { type: 'user', text: input };
-    setMessages(prev => [...prev, userMsg]);
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInput('');
     setLoading(true);
 
+    // Create session ID if new chat
+    const sessionId = currentSessionId || `session_${Date.now()}`;
+    if (!currentSessionId) setCurrentSessionId(sessionId);
+
     try {
-      // Use city name for weather instead of coordinates to avoid "wrong latitude" errors
-      const weatherData = await fetchWeather(); 
+      const weatherData = await fetchWeather();
       const aiRaw = await generateOutfitSuggestion(input, wardrobe, weatherData, USER_PROFILE);
-      
-      let parsed;
+
+      let aiMsg: any;
       try {
-        parsed = JSON.parse(aiRaw);
+        const parsed = JSON.parse(aiRaw);
         const fullOutfit = parsed.outfit.map((o: any) => ({
           ...o,
           item: wardrobe.find(w => w.id === o.id)
         })).filter((o: any) => o.item);
-        
-        setMessages(prev => [...prev, { type: 'ai', ...parsed, outfit: fullOutfit }]);
-      } catch (err) {
-        setMessages(prev => [...prev, { type: 'ai', stylingAdvice: aiRaw }]);
+        aiMsg = { type: 'ai', ...parsed, outfit: fullOutfit };
+      } catch {
+        aiMsg = { type: 'ai', stylingAdvice: aiRaw };
       }
+
+      const updatedMessages = [...newMessages, aiMsg];
+      setMessages(updatedMessages);
+      await saveSession(updatedMessages, sessionId, input);
     } catch (err) {
       console.error(err);
     }
     setLoading(false);
   };
 
+  // ── Load a past session ──
+  const loadSession = (session: ChatSession) => {
+    setMessages(session.messages);
+    setCurrentSessionId(session.id);
+    setShowHistory(false);
+  };
+
+  // ── Delete a session ──
+  const deleteSession = async (sessionId: string) => {
+    const updated = chatSessions.filter(s => s.id !== sessionId);
+    setChatSessions(updated);
+    await AsyncStorage.setItem('chat_sessions', JSON.stringify(updated));
+  };
+
+  // ── Start new chat ──
+  const startNewChat = () => {
+    setMessages([]);
+    setInput('');
+    setCurrentSessionId(null);
+    setShowHistory(false);
+  };
+
+  // ── Handle Try-On ──
   const handleTryOn = async (item: any) => {
     let currentAvatar = userAvatar;
 
@@ -202,11 +264,6 @@ export default function AIStylistScreen() {
     }
   };
 
-  const startNewChat = () => {
-    setMessages([]);
-    setInput('');
-  };
-
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -217,8 +274,8 @@ export default function AIStylistScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/* ── Top Header Controls ── */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.circleBtn} activeOpacity={0.7}>
-            <Ionicons name="settings-outline" size={20} color={Colors.textPrimary} />
+          <TouchableOpacity style={styles.circleBtn} onPress={() => setShowHistory(true)} activeOpacity={0.7}>
+            <Ionicons name="time-outline" size={20} color={Colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.newChatBtn} onPress={startNewChat} activeOpacity={0.7}>
             <Ionicons name="add" size={18} color="#fff" />
@@ -406,6 +463,64 @@ export default function AIStylistScreen() {
         </KeyboardAvoidingView>
       </SafeAreaView>
 
+      {/* ── Chat History Modal ── */}
+      <Modal visible={showHistory} transparent animationType="slide">
+        <View style={styles.historyOverlay}>
+          <View style={styles.historySheet}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>CHAT HISTORY</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)} style={styles.historyCloseBtn}>
+                <Ionicons name="close" size={22} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {chatSessions.length === 0 ? (
+              <View style={styles.historyEmpty}>
+                <Ionicons name="chatbubble-outline" size={40} color="#ccc" />
+                <Text style={styles.historyEmptyText}>No chat history yet</Text>
+                <Text style={styles.historyEmptyHint}>Your conversations will appear here</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={chatSessions}
+                keyExtractor={item => item.id}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.historyItem}
+                    onPress={() => loadSession(item)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.historyItemIcon}>
+                      <Ionicons name="sparkles" size={14} color="#000" />
+                    </View>
+                    <View style={styles.historyItemContent}>
+                      <Text style={styles.historyItemTitle} numberOfLines={1}>{item.title}</Text>
+                      <Text style={styles.historyItemDate}>
+                        {new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {' · '}{item.messages.length} messages
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => deleteSession(item.id)}
+                      style={styles.historyDeleteBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ccc" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            <TouchableOpacity style={styles.newChatFullBtn} onPress={startNewChat}>
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.newChatFullText}>START NEW CHAT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Virtual Try-On Result Modal ── */}
       <Modal visible={!!tryOnResult || tryOnLoading} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -570,15 +685,15 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   outfitCard: {
-    width: 140,
+    width: 150, // Slightly wider
     backgroundColor: '#fff',
-    borderRadius: 16,
-    marginRight: 12,
-    paddingBottom: 10,
+    borderRadius: 20, // More rounded
+    marginRight: 16, // More space between cards
+    paddingBottom: 12,
     borderWidth: 1,
     borderColor: Colors.borderLight,
     overflow: 'hidden',
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   cardImageWrapper: {
     width: '100%',
@@ -624,9 +739,9 @@ const styles = StyleSheet.create({
   },
   aiTextContent: {
     backgroundColor: 'rgba(255,255,255,0.7)',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: 18, // More breathing room
+    paddingHorizontal: 20,
+    borderRadius: 24, // More rounded
     borderTopLeftRadius: 4,
     borderWidth: 1,
     borderColor: Colors.borderLight,
@@ -777,7 +892,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    ...Shadows.medium,
+    ...Shadows.md,
   },
   inputActionBtn: {
     width: 36,
@@ -803,5 +918,107 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: 'transparent',
+  },
+
+  // ── Chat History ──
+  historyOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  historySheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingTop: 8,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+    color: '#000',
+  },
+  historyCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyEmpty: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  historyEmptyText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+  },
+  historyEmptyHint: {
+    fontSize: 13,
+    color: '#999',
+    fontWeight: '500',
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+    gap: 12,
+  },
+  historyItemIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyItemContent: {
+    flex: 1,
+    gap: 3,
+  },
+  historyItemTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+  },
+  historyItemDate: {
+    fontSize: 11,
+    color: '#999',
+    fontWeight: '500',
+  },
+  historyDeleteBtn: {
+    padding: 4,
+  },
+  newChatFullBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    margin: 20,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+  },
+  newChatFullText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
 });

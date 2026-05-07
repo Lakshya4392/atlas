@@ -284,16 +284,22 @@ app.put('/api/user/:id/avatar', async (req, res) => {
   }
 });
 
-// AI Virtual Try-On Endpoint — NVIDIA Pipeline
-// Step 1: Garment image → NVIDIA VLM → text description
-// Step 2: User photo + description → NVIDIA Flux edit → result
+// AI Virtual Try-On Endpoint — Vertex AI Imagen 2 Pipeline
+// Step 1: Garment image → NVIDIA phi-4-multimodal → detailed text description
+// Step 2: User photo + garment description → Vertex AI Imagen 2 (image editing) → result
 app.post('/api/try-on', async (req, res) => {
   const { garm_img, human_img, description } = req.body;
 
   const NVIDIA_KEY = process.env.NVIDIA_API_KEY;
+  const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID;
+  const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+  const VERTEX_KEY_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON;
 
-  if (!NVIDIA_KEY) {
-    return res.status(400).json({ success: false, error: 'NVIDIA_API_KEY not configured.' });
+  if (!VERTEX_PROJECT || !VERTEX_KEY_JSON) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Vertex AI not configured. Need VERTEX_PROJECT_ID and VERTEX_SERVICE_ACCOUNT_JSON in .env' 
+    });
   }
 
   if (!garm_img || !human_img) {
@@ -301,143 +307,148 @@ app.post('/api/try-on', async (req, res) => {
   }
 
   try {
-    console.log('🚀 NVIDIA Try-On Pipeline Starting...');
+    console.log('🚀 Vertex AI Imagen 2 Try-On Pipeline Starting...');
 
-    // ── Step 1: Describe the garment using NVIDIA VLM ──
-    console.log('👁️  Step 1: Describing garment with NVIDIA VLM...');
+    // ── Step 1: Describe garment using NVIDIA phi-4-multimodal ──
+    let garmentDescription = description || 'stylish clothing item';
 
-    let garmentDescription = description || '';
-
-    try {
-      const visionRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NVIDIA_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'microsoft/phi-3.5-vision-instruct',
-          messages: [
-            {
+    if (NVIDIA_KEY) {
+      try {
+        console.log('👁️  Step 1: Describing garment with NVIDIA phi-4-multimodal...');
+        const visionRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NVIDIA_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'microsoft/phi-4-multimodal-instruct',
+            messages: [{
               role: 'user',
               content: [
-                {
-                  type: 'image_url',
-                  image_url: { url: garm_img },
-                },
-                {
-                  type: 'text',
-                  text: 'Describe this clothing item in detail for a fashion AI. Include: garment type, color, fabric texture, fit style, notable design details (buttons, patterns, collar, sleeves). Be specific and concise. Max 2 sentences.',
-                },
-              ],
-            },
-          ],
-          max_tokens: 150,
-          temperature: 0.3,
-        }),
-      });
+                { type: 'image_url', image_url: { url: garm_img } },
+                { type: 'text', text: 'Describe this clothing item in detail for a fashion AI. Include: garment type, color, fabric texture, fit style, notable design details. Be specific. Max 2 sentences.' }
+              ]
+            }],
+            max_tokens: 150,
+            temperature: 0.3,
+          }),
+        });
 
-      if (visionRes.ok) {
-        const visionData = await visionRes.json();
-        garmentDescription = visionData.choices?.[0]?.message?.content?.trim() || description;
-        console.log('✅ Garment described:', garmentDescription);
-      } else {
-        console.warn('⚠️ VLM failed, using fallback description:', description);
+        if (visionRes.ok) {
+          const visionData = await visionRes.json();
+          const desc = visionData.choices?.[0]?.message?.content?.trim();
+          if (desc) {
+            garmentDescription = desc;
+            console.log('✅ Garment described:', garmentDescription);
+          }
+        }
+      } catch (visionErr: any) {
+        console.warn('⚠️ NVIDIA VLM failed, using fallback description:', visionErr.message);
       }
-    } catch (visionErr: any) {
-      console.warn('⚠️ VLM error, using fallback:', visionErr.message);
     }
 
-    // ── Step 2: Edit user photo with NVIDIA Flux ──
-    console.log('🎨 Step 2: Applying garment to user photo with NVIDIA Flux...');
+    // ── Step 2: Get access token for Vertex AI ──
+    console.log('🔑 Step 2: Authenticating with Vertex AI...');
+    
+    const { GoogleAuth } = await import('google-auth-library');
+    
+    // Parse service account JSON (stored as base64 or raw JSON string)
+    let serviceAccountKey;
+    try {
+      const decoded = Buffer.from(VERTEX_KEY_JSON, 'base64').toString('utf8');
+      serviceAccountKey = JSON.parse(decoded);
+    } catch {
+      serviceAccountKey = JSON.parse(VERTEX_KEY_JSON);
+    }
 
-    const editPrompt = `The person in this photo is now wearing: ${garmentDescription}. Keep the person's face, body, pose, and background exactly the same. Only change the clothing to match the description. Photorealistic, high quality fashion photo.`;
-
-    const fluxRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NVIDIA_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'black-forest-labs/flux.2-klein-4b',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: { url: human_img },
-              },
-              {
-                type: 'text',
-                text: editPrompt,
-              },
-            ],
-          },
-        ],
-        max_tokens: 1024,
-        temperature: 0.2,
-      }),
+    const auth = new GoogleAuth({
+      credentials: serviceAccountKey,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
     });
 
-    if (!fluxRes.ok) {
-      const errText = await fluxRes.text();
-      console.error('❌ Flux error:', errText);
-      throw new Error(`NVIDIA Flux error ${fluxRes.status}: ${errText}`);
+    const accessToken = await auth.getAccessToken();
+    console.log('✅ Vertex AI authenticated');
+
+    // ── Step 3: Download user image and convert to base64 ──
+    console.log('📥 Step 3: Fetching user image...');
+    const humanImgRes = await fetch(human_img);
+    const humanImgBuffer = await humanImgRes.arrayBuffer();
+    const humanImgBase64 = Buffer.from(humanImgBuffer).toString('base64');
+    const humanImgMime = humanImgRes.headers.get('content-type') || 'image/jpeg';
+
+    // ── Step 4: Call Vertex AI Imagen 2 edit endpoint ──
+    console.log('🎨 Step 4: Calling Vertex AI Imagen 2 image editing...');
+
+    // Advanced prompt for better VTO results
+    const editPrompt = `Photorealistic fashion photography. A person wearing ${garmentDescription}. The person, their face, body proportions, pose, and the background must remain identical to the original photo. Only the clothing should be replaced with the described garment. High resolution, 8k, professional lighting.`;
+
+    const vertexEndpoint = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/imagegeneration@006:predict`;
+
+    const vertexPayload = {
+      instances: [{
+        prompt: editPrompt,
+        image: {
+          bytesBase64Encoded: humanImgBase64,
+          mimeType: humanImgMime,
+        },
+      }],
+      parameters: {
+        sampleCount: 1,
+        // We use EDIT_MODE_INPAINT_INSERTION but without a mask, Imagen 2 tries to identify the subject.
+        // For better results, it's recommended to provide a mask, but we'll try instruction-based editing.
+        editConfig: {
+          editMode: 'EDIT_MODE_DEFAULT', // Changed to DEFAULT for instruction-based editing without a mask
+        },
+        outputOptions: {
+          mimeType: 'image/jpeg',
+          compressionQuality: 95,
+        },
+      },
+    };
+
+    const vertexRes = await fetch(vertexEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(vertexPayload),
+    });
+
+    if (!vertexRes.ok) {
+      const errText = await vertexRes.text();
+      console.error('❌ Vertex AI error:', errText);
+      throw new Error(`Vertex AI error ${vertexRes.status}: ${errText}`);
     }
 
-    const fluxData = await fluxRes.json();
+    const vertexData = await vertexRes.json();
+    const resultBase64 = vertexData.predictions?.[0]?.bytesBase64Encoded;
 
-    // Flux returns base64 image in content
-    const content = fluxData.choices?.[0]?.message?.content;
-    console.log('Flux response content type:', typeof content);
+    if (!resultBase64) {
+      console.error('❌ No image in Vertex response:', JSON.stringify(vertexData).substring(0, 500));
+      throw new Error('No image returned from Vertex AI Imagen 2. The prompt might have been blocked or the image couldn\'t be processed.');
+    }
 
-    // Extract image URL or base64
-    let resultUrl = '';
-
-    if (typeof content === 'string' && content.startsWith('data:image')) {
-      // base64 — upload to Cloudinary
-      console.log('📤 Uploading base64 result to Cloudinary...');
-      const uploadResult = await new Promise<string>((resolve, reject) => {
-        cloudinary.uploader.upload(content, { folder: 'atla_tryon' }, (err, result) => {
-          if (err) reject(err);
-          else resolve(result?.secure_url || '');
-        });
+    // ── Step 5: Upload result to Cloudinary ──
+    console.log('📤 Step 5: Uploading result to Cloudinary...');
+    const dataUri = `data:image/jpeg;base64,${resultBase64}`;
+    
+    const uploadResult = await new Promise<string>((resolve, reject) => {
+      cloudinary.uploader.upload(dataUri, { 
+        folder: 'atla_tryon',
+        transformation: [{ quality: 'auto', fetch_format: 'auto' }]
+      }, (err, result) => {
+        if (err) reject(err);
+        else resolve(result?.secure_url || '');
       });
-      resultUrl = uploadResult;
-    } else if (typeof content === 'string' && content.startsWith('http')) {
-      resultUrl = content;
-    } else if (Array.isArray(content)) {
-      // content array format
-      for (const part of content) {
-        if (part.type === 'image_url') {
-          resultUrl = part.image_url?.url || '';
-          break;
-        } else if (part.type === 'text' && part.text?.startsWith('data:image')) {
-          // upload base64
-          const uploadResult = await new Promise<string>((resolve, reject) => {
-            cloudinary.uploader.upload(part.text, { folder: 'atla_tryon' }, (err, result) => {
-              if (err) reject(err);
-              else resolve(result?.secure_url || '');
-            });
-          });
-          resultUrl = uploadResult;
-          break;
-        }
-      }
-    }
+    });
 
-    if (!resultUrl) {
-      console.error('❌ No image in Flux response:', JSON.stringify(fluxData).substring(0, 500));
-      throw new Error('No image returned from NVIDIA Flux');
-    }
-
-    console.log('✅ Try-On Complete:', resultUrl);
-    res.json({ success: true, url: resultUrl });
+    console.log('✅ Try-On Complete:', uploadResult);
+    res.json({ success: true, url: uploadResult });
 
   } catch (error: any) {
-    console.error('❌ NVIDIA Try-On Error:', error.message);
+    console.error('❌ Vertex AI Try-On Pipeline Failed:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
