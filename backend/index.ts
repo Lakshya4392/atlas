@@ -290,7 +290,7 @@ app.put('/api/user/:id/avatar', async (req, res) => {
 app.post('/api/try-on', async (req, res) => {
   const { garm_img, human_img, description } = req.body;
 
-  const NVIDIA_KEY = process.env.NVIDIA_API_KEY;
+  const NVIDIA_KEY = process.env.NVIDIA_API_KEY || process.env.EXPO_PUBLIC_NVIDIA_API_KEY;
   const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID;
   const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
   const VERTEX_KEY_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON;
