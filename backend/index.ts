@@ -7,6 +7,7 @@ import { fal } from '@fal-ai/client';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import { Readable } from 'stream';
+import bcrypt from 'bcryptjs';
 import fashionRoutes from './src/routes/fashion';
 
 const prisma = new PrismaClient();
@@ -71,25 +72,30 @@ app.get('/api/test', async (req, res) => {
 // ── Register ──
 app.post('/api/register', async (req, res) => {
   try {
-    const { email, name } = req.body;
+    const { email, name, password } = req.body;
     console.log(`📝 Registration attempt: name="${name}", email="${email}"`);
 
-    if (!email || !name) {
-      return res.status(400).json({ success: false, error: 'Name and email are required' });
+    if (!email || !name || !password) {
+      return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
     }
 
     // Check if user already exists
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      console.log(`✅ User already exists, logging in: ${email}`);
-      return res.json({ success: true, user: existing });
+      return res.status(400).json({ success: false, error: 'User already exists' });
     }
 
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const user = await prisma.user.create({
-      data: { email, name, style: 'Minimalist' },
+      data: { email, name, password: hashedPassword, style: 'Minimalist' },
     });
     console.log(`✅ User created successfully: ${user.id}`);
-    res.json({ success: true, user });
+    
+    // Don't send password back to client
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ success: true, user: userWithoutPassword });
   } catch (error: any) {
     console.error('❌ Registration failed:', error.message);
     res.status(400).json({ success: false, error: error.message });
@@ -99,15 +105,31 @@ app.post('/api/register', async (req, res) => {
 // ── Login ──
 app.post('/api/login', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, password } = req.body;
     console.log(`🔑 Login attempt: email="${email}"`);
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    }
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
+
+    if (!user.password) {
+      return res.status(400).json({ success: false, error: 'Invalid login method for this user' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+    }
+
     console.log(`✅ Login successful: ${user.name}`);
-    res.json({ success: true, user });
+    
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ success: true, user: userWithoutPassword });
   } catch (error: any) {
     console.error('❌ Login failed:', error.message);
     res.status(400).json({ success: false, error: error.message });

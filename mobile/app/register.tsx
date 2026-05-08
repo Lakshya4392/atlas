@@ -11,21 +11,23 @@ import {
 } from '../constants/theme';
 import { useAuth } from '../src/contexts/AuthContext';
 
-export default function LoginScreen() {
-  const { login, state } = useAuth();
+export default function RegisterScreen() {
+  const { register, state } = useAuth();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
-    if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+  const handleRegister = async () => {
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
     try {
-      await login(email.trim(), password);
-      router.replace('/(tabs)');
+      await register(`${firstName.trim()} ${lastName.trim()}`, email.trim(), password.trim());
+      router.replace('/onboarding');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'User not found. Please register first.');
+      Alert.alert('Registration Failed', error.message || 'Something went wrong.');
     }
   };
 
@@ -36,22 +38,43 @@ export default function LoginScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-
-        {/* Back button */}
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/login')}
           hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         >
           <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* Content */}
         <View style={styles.content}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to your Alta Daily account</Text>
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Join Atla Daily today</Text>
 
           <View style={styles.form}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="First Name"
+                placeholderTextColor={Colors.textMuted}
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+              />
+            </View>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Last Name"
+                placeholderTextColor={Colors.textMuted}
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+              />
+            </View>
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email</Text>
               <TextInput
@@ -62,7 +85,6 @@ export default function LoginScreen() {
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoFocus
               />
             </View>
 
@@ -70,7 +92,7 @@ export default function LoginScreen() {
               <Text style={styles.inputLabel}>Password</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Your password"
+                placeholder="Secure Password"
                 placeholderTextColor={Colors.textMuted}
                 value={password}
                 onChangeText={setPassword}
@@ -79,13 +101,13 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.loginBtn, state.isLoading && styles.loginBtnDisabled]}
-              onPress={handleLogin}
+              style={[styles.registerBtn, state.isLoading && styles.registerBtnDisabled]}
+              onPress={handleRegister}
               disabled={state.isLoading}
               activeOpacity={0.8}
             >
-              <Text style={styles.loginBtnText}>
-                {state.isLoading ? 'Signing in...' : 'Sign In'}
+              <Text style={styles.registerBtnText}>
+                {state.isLoading ? 'Creating account...' : 'Sign Up'}
               </Text>
               {!state.isLoading && (
                 <Ionicons name="arrow-forward" size={18} color="#fff" />
@@ -93,11 +115,10 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.signupLink} onPress={() => router.replace('/onboarding')}>
-            <Text style={styles.signupLinkText}>Don't have an account? Sign up</Text>
+          <TouchableOpacity style={styles.loginLink} onPress={() => router.replace('/login')}>
+            <Text style={styles.loginLinkText}>Already have an account? Sign in</Text>
           </TouchableOpacity>
         </View>
-
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -164,7 +185,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  loginBtn: {
+  registerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -175,20 +196,21 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
     ...Shadows.md,
   },
-  loginBtnDisabled: {
+  registerBtnDisabled: {
     opacity: 0.6,
   },
-  loginBtnText: {
+  registerBtnText: {
     fontSize: FontSize.lg,
     color: '#fff',
     fontWeight: FontWeight.black,
     letterSpacing: 1,
   },
-  signupLink: {
+  loginLink: {
     alignItems: 'center',
     paddingVertical: Spacing.lg,
+    marginTop: Spacing.lg,
   },
-  signupLinkText: {
+  loginLinkText: {
     fontSize: FontSize.md,
     color: Colors.accent,
     fontWeight: FontWeight.medium,

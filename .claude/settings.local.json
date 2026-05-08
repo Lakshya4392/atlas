@@ -4,5 +4,6 @@
       "Bash(npx --version)",
       "Bash(npm view *)"
     ]
-  }
+  },
+  "customInstructions": "CRITICAL RULE: NEVER edit files on the 'main' branch directly. You MUST ALWAYS create and use a git worktree in the '.worktrees/' directory before making any changes. Example: `git worktree add .worktrees/my-task -b my-task` and then `cd .worktrees/my-task`."
 }

@@ -1,12 +1,17 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity,
-  StatusBar, Platform, TextInput, KeyboardAvoidingView, ActivityIndicator, Alert, ScrollView, SafeAreaView
+  StatusBar, Platform, TextInput, KeyboardAvoidingView, ActivityIndicator, Alert, ScrollView, SafeAreaView, LayoutAnimation, UIManager
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../src/contexts/AuthContext';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,14 +29,11 @@ const SOURCES = [
 const BRANDS = ['A.P.C.', 'AMI Paris', 'Acne Studios', 'Aritzia', 'Zara', 'H&M', 'Nike', 'Lululemon', 'Fear of God', 'Loro Piana'];
 
 export default function Onboarding() {
+  const { state: authState } = useAuth();
   const [step, setStep] = React.useState(1);
   const [loading, setLoading] = React.useState(false);
-  const [registeredUserId, setRegisteredUserId] = React.useState<string | null>(null);
 
   // Form State
-  const [firstName, setFirstName] = React.useState('');
-  const [lastName, setLastName] = React.useState('');
-  const [email, setEmail] = React.useState(''); // Required for auth
   const [occupation, setOccupation] = React.useState('');
   const [wearPref, setWearPref] = React.useState('');
   const [hearSource, setHearSource] = React.useState('');
@@ -47,45 +49,46 @@ export default function Onboarding() {
   };
   const BACKEND_URL = getBackendUrl();
 
-  const handleNext = async () => {
-    if (step === 1) {
-      if (!firstName || !lastName || !email) {
-        Alert.alert('Missing Info', 'Please enter your first name, last name, and email to continue.');
-        return;
-      }
-      setLoading(true);
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: `${firstName} ${lastName}`, email }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          await AsyncStorage.setItem('user', JSON.stringify(data.user));
-          setRegisteredUserId(data.user.id);
-          setStep(2);
-        } else {
-          Alert.alert('Registration Failed', data.error);
-        }
-      } catch (e) {
-        console.error(e);
-        Alert.alert('Error', 'Could not connect to server.');
-      } finally {
-        setLoading(false);
-      }
-    } else if (step < 5) {
+  const handleNext = () => {
+    if (step === 1 && !occupation.trim()) {
+      Alert.alert('Required', 'Please enter or select an occupation');
+      return;
+    }
+    if (step === 2 && !wearPref) {
+      Alert.alert('Required', 'Please select your wear preference');
+      return;
+    }
+    if (step === 3 && !hearSource) {
+      Alert.alert('Required', 'Please select how you heard about us');
+      return;
+    }
+
+    if (step < 4) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setStep(step + 1);
     } else {
-      await handleFinish();
+      handleFinish();
+    }
+  };
+
+  const handleBack = () => {
+    if (step > 1) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setStep(step - 1);
+    } else {
+      router.back();
     }
   };
 
   const handleFinish = async () => {
-    if (!registeredUserId) return;
+    const userId = authState.user?.id;
+    if (!userId) {
+      router.replace('/(tabs)');
+      return;
+    }
     setLoading(true);
     try {
-      await fetch(`${BACKEND_URL}/api/user/${registeredUserId}/onboarding`, {
+      await fetch(`${BACKEND_URL}/api/user/${userId}/onboarding`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -96,9 +99,11 @@ export default function Onboarding() {
         }),
       });
       // Pre-fetch feed
-      fetch(`${BACKEND_URL}/api/fashion/feed/${registeredUserId}`).catch(()=>console.log('prefetch silent catch'));
+      fetch(`${BACKEND_URL}/api/fashion/feed/${userId}`).catch(()=>console.log('prefetch silent catch'));
+      await AsyncStorage.setItem('onboardingCompleted', 'true');
       router.replace('/(tabs)');
     } catch (e) {
+      await AsyncStorage.setItem('onboardingCompleted', 'true');
       router.replace('/(tabs)');
     } finally {
       setLoading(false);
@@ -115,26 +120,10 @@ export default function Onboarding() {
       case 1:
         return (
           <View style={styles.stepContent}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="person-outline" size={28} color="#000" />
-            </View>
-            <Text style={styles.title}>Your <Text style={styles.italic}>name</Text></Text>
-            <Text style={styles.subtitle}>Please enter your first and last{'\n'}name to continue</Text>
-
-            <View style={styles.inputStack}>
-              <TextInput style={styles.stackedInputTop} placeholder="FIRST NAME" placeholderTextColor="#000" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
-              <TextInput style={styles.stackedInputMiddle} placeholder="LAST NAME" placeholderTextColor="#000" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
-              <TextInput style={styles.stackedInputBottom} placeholder="EMAIL" placeholderTextColor="#000" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
-            </View>
-          </View>
-        );
-      case 2:
-        return (
-          <View style={styles.stepContent}>
             <Text style={styles.title}>What <Text style={styles.italic}>do you do</Text>{'\n'}for work?</Text>
             <Text style={styles.subtitle}>We'll personalize recommendations{'\n'}for both weekdays and weekends</Text>
 
-            <TextInput style={styles.singleInput} placeholder="Type or selection occupation" placeholderTextColor="#999" value={occupation} onChangeText={setOccupation} />
+            <TextInput style={styles.singleInput} placeholder="Type or select occupation" placeholderTextColor="#999" value={occupation} onChangeText={setOccupation} />
 
             <View style={styles.pillContainer}>
               {OCCUPATIONS.map(occ => (
@@ -145,7 +134,7 @@ export default function Onboarding() {
             </View>
           </View>
         );
-      case 3:
+      case 2:
         return (
           <View style={styles.stepContent}>
             <View style={styles.iconCircle}>
@@ -166,7 +155,7 @@ export default function Onboarding() {
             </View>
           </View>
         );
-      case 4:
+      case 3:
         return (
           <View style={styles.stepContent}>
             <View style={styles.iconCircle}>
@@ -193,7 +182,7 @@ export default function Onboarding() {
             </View>
           </View>
         );
-      case 5:
+      case 4:
         return (
           <View style={styles.stepContent}>
             <Text style={styles.title}>Choose 3 or{'\n'}more <Text style={styles.italic}>brands</Text></Text>
@@ -215,7 +204,7 @@ export default function Onboarding() {
                 </View>
               );
             })}
-            <View style={{ height: 100 }} /> {/* Padding for bottom button */}
+            <View style={{ height: 100 }} />
           </View>
         );
       default:
@@ -228,25 +217,23 @@ export default function Onboarding() {
       <StatusBar barStyle="dark-content" />
       <View style={styles.container}>
         
-        {/* Top Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => step > 1 ? setStep(step - 1) : router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color="#000" />
           </TouchableOpacity>
-          {step === 5 && (
+          {step === 4 ? (
             <TouchableOpacity onPress={handleFinish}>
               <Text style={styles.skipText}>Skip</Text>
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {renderStep()}
         </ScrollView>
 
-        {/* Footer Button */}
         <View style={styles.footer}>
-          {step === 5 ? (
+          {step === 4 ? (
             <TouchableOpacity 
               style={[styles.primaryButton, selectedBrands.length < 3 && styles.primaryButtonDisabled]} 
               onPress={handleFinish} 
@@ -312,32 +299,6 @@ const styles = StyleSheet.create({
   },
   
   // Inputs
-  inputStack: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  stackedInputTop: {
-    backgroundColor: '#F5F5F5',
-    padding: 20,
-    fontSize: 14,
-    fontWeight: '500',
-    borderBottomWidth: 2,
-    borderBottomColor: '#FFF',
-  },
-  stackedInputMiddle: {
-    backgroundColor: '#F5F5F5',
-    padding: 20,
-    fontSize: 14,
-    fontWeight: '500',
-    borderBottomWidth: 2,
-    borderBottomColor: '#FFF',
-  },
-  stackedInputBottom: {
-    backgroundColor: '#F5F5F5',
-    padding: 20,
-    fontSize: 14,
-    fontWeight: '500',
-  },
   singleInput: {
     backgroundColor: '#F5F5F5',
     padding: 20,
@@ -376,7 +337,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'space-between',
   },
-  wearBtnActive: { backgroundColor: '#EAEAEA' }, // subtle active state
+  wearBtnActive: { backgroundColor: '#EAEAEA' },
   radioCircle: {
     width: 24,
     height: 24,

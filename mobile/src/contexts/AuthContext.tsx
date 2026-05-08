@@ -45,8 +45,8 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 
 const AuthContext = createContext<{
   state: AuthState;
-  login: (email: string) => Promise<void>;
-  register: (name: string, email: string) => Promise<void>;
+  login: (email: string, password?: string) => Promise<void>;
+  register: (name: string, email: string, password?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 } | null>(null);
@@ -77,10 +77,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     init();
   }, []);
 
-  const login = async (email: string) => {
+  const login = async (email: string, password?: string) => {
     try {
       dispatch({ type: 'LOGIN_START' });
-      const user = await authAPI.login(email);
+      const user = await authAPI.login(email, password);
       await AsyncStorage.setItem('user', JSON.stringify(user));
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
     } catch (error: any) {
@@ -89,10 +89,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const register = async (name: string, email: string) => {
+  const register = async (name: string, email: string, password?: string) => {
     try {
       dispatch({ type: 'LOGIN_START' });
-      const user = await authAPI.register(name, email);
+      const user = await authAPI.register(name, email, password);
       await AsyncStorage.setItem('user', JSON.stringify(user));
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
     } catch (error: any) {

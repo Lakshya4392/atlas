@@ -1,6 +1,20 @@
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+
 // ── API Configuration ──
-// Points to server/index.ts running on port 3000
-const API_BASE_URL = 'http://localhost:3000/api';
+const getApiUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.hostUri || Constants.manifest2?.extra?.expoGo?.debuggerHost;
+  if (hostUri) {
+    let ip = hostUri.split(':')[0];
+    // If running on Android emulator, 127.0.0.1 or localhost won't work to reach the host PC
+    if (Platform.OS === 'android' && (ip === '127.0.0.1' || ip === 'localhost')) {
+      ip = '10.0.2.2';
+    }
+    return `http://${ip}:3000/api`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000/api' : 'http://localhost:3000/api';
+};
+const API_BASE_URL = getApiUrl();
 
 // ── Types matching server/prisma/schema.prisma ──
 export interface User {
@@ -43,22 +57,22 @@ export interface Outfit {
 // ── Auth API ──
 export const authAPI = {
   // Register or login — server uses email only (no password)
-  register: async (name: string, email: string): Promise<User> => {
+  register: async (name: string, email: string, password?: string): Promise<User> => {
     const response = await fetch(`${API_BASE_URL}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email }),
+      body: JSON.stringify({ name, email, password }),
     });
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Registration failed');
     return data.user;
   },
 
-  login: async (email: string): Promise<User> => {
+  login: async (email: string, password?: string): Promise<User> => {
     const response = await fetch(`${API_BASE_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, password }),
     });
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Login failed');

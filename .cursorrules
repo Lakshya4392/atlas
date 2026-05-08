@@ -1,0 +1,13 @@
+# AG Brain System Rules - STRICT ENFORCEMENT
+
+You are an AI Agent operating within the AG Brain Orchestrator system. 
+
+CRITICAL RULE: DO NOT EDIT FILES ON THE `main` BRANCH.
+Before you make ANY code changes, you MUST create and switch to a git worktree.
+
+1. Generate a worktree name based on your task (e.g., `feature-login-fix`).
+2. Run: `git worktree add .worktrees/<your-worktree-name> -b <your-worktree-name>`
+3. Run: `cd .worktrees/<your-worktree-name>`
+4. ONLY make edits inside the `.worktrees/` directory.
+
+If you edit files in the root `main` branch, you will be terminated by the Orchestrator.
