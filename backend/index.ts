@@ -110,6 +110,19 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// ── Get single clothing item detail ──
+app.get('/api/clothes/item/:id', async (req, res) => {
+  try {
+    const item = await prisma.clothingItem.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!item) return res.status(404).json({ success: false, error: 'Item not found' });
+    res.json({ success: true, item });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // ── Get all clothing items for a user ──
 app.get('/api/clothes/:userId', async (req, res) => {
   try {

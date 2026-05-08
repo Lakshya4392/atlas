@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Dimensions, Image
+  TouchableOpacity, Dimensions, Image, ActivityIndicator, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import {
   Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
 } from '../constants/theme';
@@ -14,17 +14,83 @@ import { CLOTHING_ITEMS, OUTFITS } from '../constants/data';
 
 const { width } = Dimensions.get('window');
 
+const getBackendUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:3000`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
 const SIZES = ['XS', 'S', 'M', 'L', 'XL'];
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const item = CLOTHING_ITEMS.find(i => i.id === id);
-  const [fav, setFav] = useState(item?.favorite ?? false);
+  const [item, setItem] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [fav, setFav] = useState(false);
   const [selectedSize, setSelectedSize] = useState('M');
+  const BACKEND_URL = getBackendUrl();
 
-  if (!item) return <View style={styles.container} />;
+  useEffect(() => {
+    const fetchItem = async () => {
+      // 1. Try mock data first (for legacy items)
+      const mockItem = CLOTHING_ITEMS.find(i => i.id === id);
+      if (mockItem) {
+        setItem(mockItem);
+        setFav(mockItem.favorite);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Try API (for newly added items)
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/clothes/item/${id}`);
+        const data = await response.json();
+        if (data.success && data.item) {
+          setItem(data.item);
+          setFav(data.item.favorite);
+        }
+      } catch (e) {
+        console.error('Failed to fetch item details:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchItem();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={Colors.accent} />
+      </View>
+    );
+  }
+
+  if (!item) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
+        <Text style={styles.errorText}>Item not found</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>GO BACK</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const outfitsWithItem = OUTFITS.filter(o => o.items.includes(item.id));
+  
+  // Robust image source resolution
+  let imageSource = null;
+  if (item.imageUrl && item.imageUrl.trim() !== '') {
+    imageSource = { uri: item.imageUrl };
+  } else if (item.image) {
+    imageSource = item.image;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -46,7 +112,11 @@ export default function ItemDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {/* ── Large product image area ── */}
         <View style={styles.productImageArea}>
-          <Image source={item.image} style={styles.productImage} resizeMode="contain" />
+          {imageSource ? (
+            <Image source={imageSource} style={styles.productImage} resizeMode="cover" />
+          ) : (
+            <Ionicons name="shirt-outline" size={80} color={Colors.border} />
+          )}
 
           {/* Side dots pagination */}
           <View style={styles.sideDots}>
@@ -67,10 +137,10 @@ export default function ItemDetailScreen() {
           <View style={styles.infoRow}>
             <View style={styles.infoLeft}>
               <View style={styles.tag}>
-                <Text style={styles.tagText}>{item.category.toUpperCase()}</Text>
+                <Text style={styles.tagText}>{item.category?.toUpperCase() || 'GENERAL'}</Text>
               </View>
-              <Text style={styles.productName}>{item.name.toUpperCase()}</Text>
-              <Text style={styles.productBrand}>{item.brand}</Text>
+              <Text style={styles.productName}>{item.name?.toUpperCase() || 'UNTITLED'}</Text>
+              <Text style={styles.productBrand}>{item.brand || 'Personal Archive'}</Text>
             </View>
             <TouchableOpacity style={styles.wearBtn} activeOpacity={0.85}>
               <Text style={styles.wearBtnText}>WEAR TODAY</Text>
@@ -114,10 +184,10 @@ export default function ItemDetailScreen() {
           <Text style={styles.detailsLabel}>DETAILS</Text>
           <View style={styles.detailsCard}>
             {[
-              { label: 'Brand', value: item.brand },
-              { label: 'Category', value: item.category },
-              { label: 'Color', value: item.color },
-              { label: 'Times Worn', value: `${item.wearCount}×` },
+              { label: 'Brand', value: item.brand || 'Unknown' },
+              { label: 'Category', value: item.category || 'Unknown' },
+              { label: 'Color', value: item.color || 'Unknown' },
+              { label: 'Times Worn', value: `${item.wearCount || 0}×` },
               { label: 'Last Worn', value: item.lastWorn ?? 'Never' },
             ].map((d, i, arr) => (
               <View key={d.label} style={[styles.detailRow, i < arr.length - 1 && styles.detailRowBorder]}>
@@ -129,11 +199,11 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* ── Tags ── */}
-        {item.tags.length > 0 && (
+        {item.tags && item.tags.length > 0 && (
           <View style={styles.tagsSection}>
             <Text style={styles.tagsLabel}>TAGS</Text>
             <View style={styles.tagsList}>
-              {item.tags.map(tag => (
+              {item.tags.map((tag: string) => (
                 <View key={tag} style={styles.tagPill}>
                   <Text style={styles.tagText}>{tag.toUpperCase()}</Text>
                 </View>
@@ -223,8 +293,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
   productImage: {
-    width: '80%',
-    height: '80%',
+    width: '100%',
+    height: '100%',
   },
   sideDots: {
     position: 'absolute',
@@ -501,4 +571,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   outfitRowRight: {},
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+    fontWeight: FontWeight.bold,
+  },
+  backBtn: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: Spacing['2xl'],
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  backBtnText: {
+    color: '#fff',
+    fontWeight: FontWeight.black,
+    fontSize: FontSize.sm,
+    letterSpacing: 1,
+  },
 });

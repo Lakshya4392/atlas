@@ -97,6 +97,46 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
     color: 'Beige', colorHex: '#E5E5E0', brand: 'Architect', image: require('../assets/images/beige_hoodie.png'),
     tags: ['casual', 'everyday', 'minimal'], wearCount: 45, lastWorn: '2026-05-06', favorite: false,
   },
+  {
+    id: '5', name: 'Oversized Denim Shirt', category: 'tops',
+    color: 'Indigo', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/denim_jacket.png'),
+    tags: ['casual', 'layering'], wearCount: 8, lastWorn: '2026-05-01', favorite: false,
+  },
+  {
+    id: '6', name: 'Heavyweight Fleece Hoodie', category: 'tops',
+    color: 'Sand', colorHex: '#E5E5E0', brand: 'Essentials', image: require('../assets/images/beige_hoodie.png'),
+    tags: ['cozy', 'winter'], wearCount: 32, lastWorn: '2026-04-15', favorite: false,
+  },
+  {
+    id: '7', name: 'Raw Denim Work Coat', category: 'outerwear',
+    color: 'Dark Blue', colorHex: '#1E3A5F', brand: 'Workwear Co.', image: require('../assets/images/denim_jacket.png'),
+    tags: ['utilitarian', 'rugged'], wearCount: 15, lastWorn: '2026-05-05', favorite: true,
+  },
+  {
+    id: '8', name: 'Premium Cotton Hoodie', category: 'tops',
+    color: 'Off-White', colorHex: '#F8FAFC', brand: 'Luxe Basic', image: require('../assets/images/beige_hoodie.png'),
+    tags: ['premium', 'minimalist'], wearCount: 20, lastWorn: '2026-05-07', favorite: true,
+  },
+  {
+    id: '9', name: 'Sherpa Lined Denim Jacket', category: 'outerwear',
+    color: 'Light Wash', colorHex: '#A5B4FC', brand: 'Winter Archive', image: require('../assets/images/denim_jacket.png'),
+    tags: ['winter', 'warm', 'classic'], wearCount: 5, lastWorn: '2026-04-20', favorite: false,
+  },
+  {
+    id: '10', name: 'Boxy Fit Hoodie', category: 'tops',
+    color: 'Cream', colorHex: '#FEF3C7', brand: 'Modernist', image: require('../assets/images/beige_hoodie.png'),
+    tags: ['streetwear', 'boxy'], wearCount: 18, lastWorn: '2026-05-02', favorite: true,
+  },
+  {
+    id: '11', name: 'Vintage Trucker Jacket', category: 'outerwear',
+    color: 'Distressed Blue', colorHex: '#3B82F6', brand: 'Heritage', image: require('../assets/images/denim_jacket.png'),
+    tags: ['vintage', 'distressed'], wearCount: 22, lastWorn: '2026-05-06', favorite: false,
+  },
+  {
+    id: '12', name: 'Soft Tech Hoodie', category: 'tops',
+    color: 'Bone', colorHex: '#F1F5F9', brand: 'Performance', image: require('../assets/images/beige_hoodie.png'),
+    tags: ['tech', 'activewear'], wearCount: 14, lastWorn: '2026-05-03', favorite: false,
+  },
 ];
 
 export const OUTFITS: Outfit[] = [
