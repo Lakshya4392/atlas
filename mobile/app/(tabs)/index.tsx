@@ -38,6 +38,8 @@ const ItemCard = ({ item, index }: { item: any, index: number }) => {
       <View style={[styles.imageContainer, { height: cardHeight }]}>
         {item.imageUrl ? (
           <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
+        ) : item.thumbnail ? (
+          <Image source={{ uri: item.thumbnail }} style={styles.image} resizeMode="cover" />
         ) : item.image ? (
           <Image source={item.image} style={styles.image} resizeMode="cover" />
         ) : (
@@ -52,8 +54,8 @@ const ItemCard = ({ item, index }: { item: any, index: number }) => {
         )}
       </View>
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>{item.name?.toUpperCase()}</Text>
-        <Text style={styles.brand}>{item.brand}</Text>
+        <Text style={styles.name} numberOfLines={1}>{(item.name || item.title || 'UNKNOWN').toUpperCase()}</Text>
+        <Text style={styles.brand}>{item.brand || 'No Brand'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -61,6 +63,7 @@ const ItemCard = ({ item, index }: { item: any, index: number }) => {
 
 export default function DashboardScreen() {
   const [items, setItems] = useState<any[]>([]);
+  const [visibleCount, setVisibleCount] = useState(14);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
@@ -72,15 +75,23 @@ export default function DashboardScreen() {
     const id = uid || userId;
     if (!id) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/clothes/${id}`);
+      // Fetch from the new Personalized SerpAPI Feed instead of mock data
+      const res = await fetch(`${BACKEND_URL}/api/fashion/feed/${id}`);
       const data = await res.json();
-      if (data.success) {
-        setItems(data.items || []);
+      if (data.success && data.data) {
+        const seen = new Set();
+        const unique = data.data.filter((item: any) => {
+          const key = item.link || item.title || item.id;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setItems(unique);
       } else {
-        setItems(CLOTHING_ITEMS);
+        setItems([]);
       }
     } catch (e) {
-      setItems(CLOTHING_ITEMS);
+      setItems([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -97,7 +108,7 @@ export default function DashboardScreen() {
           fetchData(u.id);
         } else {
           setLoading(false);
-          setItems(CLOTHING_ITEMS);
+          setItems([]);
         }
       });
     }, [])
@@ -108,11 +119,13 @@ export default function DashboardScreen() {
     fetchData();
   };
 
-  const filtered = items.filter(item =>
-    !query ||
-    item.name?.toLowerCase().includes(query.toLowerCase()) ||
-    (item.brand && item.brand.toLowerCase().includes(query.toLowerCase()))
-  );
+  const allFiltered = items.filter(item => {
+    const itemName = item.name || item.title || '';
+    return !query ||
+      itemName.toLowerCase().includes(query.toLowerCase()) ||
+      (item.brand && item.brand.toLowerCase().includes(query.toLowerCase()));
+  });
+  const filtered = allFiltered.slice(0, visibleCount);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -142,35 +155,72 @@ export default function DashboardScreen() {
         </View>
 
         {/* ── Hero section ── */}
-        <TouchableOpacity 
-          style={styles.heroBanner} 
-          activeOpacity={0.9} 
-          onPress={() => router.push('/(tabs)/ai-stylist')}
-        >
-          <Image 
-            source={require('../../assets/images/denim_jacket.png')} 
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.8)']}
-            style={styles.heroOverlay}
+        {filtered.length > 0 ? (
+          <ScrollView 
+            horizontal 
+            pagingEnabled 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.heroBannerScroll}
           >
-            <View style={styles.heroContent}>
-              <Text style={styles.heroTag}>FEATURED</Text>
-              <Text style={styles.heroTitle}>AI STYLE GUIDE</Text>
-              <Text style={styles.heroSub}>Let ATLA curate your day</Text>
-            </View>
-            <View style={styles.heroBtn}>
-              <Ionicons name="sparkles" size={18} color="#000" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            {filtered.slice(0, 5).map((item, idx) => (
+              <TouchableOpacity 
+                key={item.id || item.link || `hero-${idx}`}
+                style={[styles.heroBanner, { width: width - 40 }]} 
+                activeOpacity={0.9} 
+                onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
+              >
+                <Image 
+                  source={{ uri: item.imageUrl || item.thumbnail }} 
+                  style={styles.heroImage}
+                  resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.8)']}
+                  style={styles.heroOverlay}
+                >
+                  <View style={styles.heroContent}>
+                    <Text style={styles.heroTag}>TRENDING NOW</Text>
+                    <Text style={styles.heroTitle} numberOfLines={1}>{(item.name || item.title || 'STYLE').toUpperCase()}</Text>
+                    <Text style={styles.heroSub}>{item.brand || 'Discover this piece'}</Text>
+                  </View>
+                  <View style={styles.heroBtn}>
+                    <Ionicons name="arrow-forward" size={18} color="#000" />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <TouchableOpacity 
+            style={[styles.heroBanner, styles.heroBannerScroll]} 
+            activeOpacity={0.9} 
+            onPress={() => router.push('/(tabs)/ai-stylist')}
+          >
+            <Image 
+              source={require('../../assets/images/denim_jacket.png')} 
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.8)']}
+              style={styles.heroOverlay}
+            >
+              <View style={styles.heroContent}>
+                <Text style={styles.heroTag}>FEATURED</Text>
+                <Text style={styles.heroTitle}>AI STYLE GUIDE</Text>
+                <Text style={styles.heroSub}>Let ATLA curate your day</Text>
+              </View>
+              <View style={styles.heroBtn}>
+                <Ionicons name="sparkles" size={18} color="#000" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         {/* ── Section ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>MY WARDROBE</Text>
-          <Text style={styles.sectionCount}>{filtered.length} PIECES</Text>
+          <Text style={styles.sectionTitle}>DISCOVER</Text>
+          <Text style={styles.sectionCount}>{filtered.length} CURATED PIECES</Text>
         </View>
 
         {/* ── Pinterest Masonry Grid ── */}
@@ -193,14 +243,22 @@ export default function DashboardScreen() {
           <View style={styles.masonryGrid}>
             <View style={styles.masonryColumn}>
               {filtered.filter((_, i) => i % 2 === 0).map((item, idx) => (
-                <ItemCard key={item.id} item={item} index={idx} />
+                <ItemCard key={item.id || item.link || `col1-${idx}`} item={item} index={idx} />
               ))}
             </View>
             <View style={styles.masonryColumn}>
               {filtered.filter((_, i) => i % 2 !== 0).map((item, idx) => (
-                <ItemCard key={item.id} item={item} index={idx} />
+                <ItemCard key={item.id || item.link || `col2-${idx}`} item={item} index={idx} />
               ))}
             </View>
+          </View>
+        )}
+
+        {!loading && filtered.length > 0 && visibleCount < allFiltered.length && (
+          <View style={{ alignItems: 'center', marginTop: 24, paddingBottom: 24 }}>
+            <TouchableOpacity style={styles.emptyBtn} onPress={() => setVisibleCount(prev => prev + 4)}>
+              <Text style={styles.emptyBtnText}>LOAD 4 MORE</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -255,12 +313,14 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: '#000', fontWeight: '600' },
 
+  heroBannerScroll: {
+    marginBottom: 32,
+  },
   heroBanner: {
     marginHorizontal: 20,
     height: 240,
     borderRadius: 32,
     overflow: 'hidden',
-    marginBottom: 32,
     ...Shadows.lg,
   },
   heroImage: {

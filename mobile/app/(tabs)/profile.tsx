@@ -7,14 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import {
-  Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
-} from '../../constants/theme';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
-const STYLE_TAGS = ['Smart Casual', 'Minimalist', 'Streetwear', 'Classic', 'Bohemian', 'Athleisure'];
 
 const getBackendUrl = () => {
   const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
@@ -28,7 +24,6 @@ const getBackendUrl = () => {
 export default function ProfileScreen() {
   const [notifs, setNotifs] = useState(true);
   const [weather, setWeather] = useState(true);
-  const [ai, setAi] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [stats, setStats] = useState({ clothesCount: 0, outfitsCount: 0, favoritesCount: 0, streak: 0, level: 'Style Explorer', style: 'Minimalist' });
@@ -105,154 +100,118 @@ export default function ProfileScreen() {
 
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.title}>PROFILE</Text>
+          <Text style={styles.title}>Profile</Text>
           <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.8}>
-            <Ionicons name="settings-outline" size={20} color={Colors.textPrimary} />
+            <Ionicons name="settings-outline" size={24} color="#000" />
           </TouchableOpacity>
         </View>
 
-        {/* ── Profile hero card ── */}
+        {/* ── Premium Hero Profile ── */}
         <View style={styles.profileHero}>
-          <View style={styles.avatarWrapper}>
-            <View style={styles.avatarMain}>
-              <Text style={styles.avatarInitials}>{user?.name?.charAt(0) || '?'}</Text>
-            </View>
-            <View style={styles.statusDot} />
+          <View style={styles.avatarMain}>
+            {user?.avatar ? (
+              <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarInitials}>{user?.name?.charAt(0) || 'A'}</Text>
+            )}
           </View>
           <Text style={styles.profileName}>{user?.name || 'Your Name'}</Text>
-          <View style={styles.styleBadge}>
-            <Text style={styles.styleBadgeText}>{stats.style?.toUpperCase()}</Text>
-          </View>
-          <Text style={styles.streakText}>{stats.streak} DAY STREAK · {stats.level}</Text>
+          <Text style={styles.profileMeta}>{stats.level} • {stats.streak} Day Streak</Text>
         </View>
 
-        {/* ── Stats bar ── */}
-        <View style={styles.statsBar}>
-          {[
-            { label: 'PIECES', value: stats.clothesCount },
-            { label: 'OUTFITS', value: stats.outfitsCount },
-            { label: 'FAVORITES', value: stats.favoritesCount },
-          ].map((stat, i) => (
-            <View key={i} style={styles.statBox}>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
-          ))}
+        {/* ── Seamless Stats Row ── */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{stats.clothesCount}</Text>
+            <Text style={styles.statLabel}>PIECES</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{stats.outfitsCount}</Text>
+            <Text style={styles.statLabel}>OUTFITS</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{stats.favoritesCount}</Text>
+            <Text style={styles.statLabel}>FAVORITES</Text>
+          </View>
         </View>
 
-        {/* ── AI Try-On Section ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>AI TRY-ON AVATAR</Text>
-          </View>
-          <View style={styles.aiCard}>
-            <View style={styles.aiAvatarPreview}>
-              {user?.avatar ? (
-                <Image source={{ uri: user.avatar }} style={styles.aiAvatarImg} />
+        {/* ── VIP AI Try-On Card ── */}
+        <View style={styles.aiCard}>
+          <View style={styles.aiCardLeft}>
+            <Text style={styles.aiCardTitle}>Digital Try-On Avatar</Text>
+            <Text style={styles.aiCardSub}>Upload a photo to see how AI outfits look on your actual body.</Text>
+            <TouchableOpacity style={styles.aiUploadBtn} onPress={handleUpdateAvatar} disabled={uploading}>
+              {uploading ? (
+                <ActivityIndicator color="#000" size="small" />
               ) : (
-                <View style={styles.aiAvatarPlaceholder}>
-                  <Ionicons name="person-outline" size={32} color="#999" />
-                  <Text style={styles.aiPlaceholderText}>NO PHOTO</Text>
-                </View>
+                <Text style={styles.aiUploadBtnText}>{user?.avatar ? 'UPDATE PHOTO' : 'SETUP AVATAR'}</Text>
               )}
-            </View>
-            <View style={styles.aiAvatarContent}>
-              <Text style={styles.aiHintText}>
-                Upload a body photo to see how outfits look on you.
-              </Text>
-              <TouchableOpacity 
-                style={styles.aiUploadBtn} 
-                onPress={handleUpdateAvatar}
-                disabled={uploading}
-              >
-                {uploading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="camera-outline" size={16} color="#fff" />
-                    <Text style={styles.aiUploadBtnText}>
-                      {user?.avatar ? 'REPLACE' : 'UPLOAD PHOTO'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.aiCardRight}>
+            {user?.avatar ? (
+               <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+            ) : (
+               <Ionicons name="body-outline" size={32} color="#FFF" />
+            )}
           </View>
         </View>
 
-        {/* ── Explore Grid ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>EXPLORE</Text>
-          <View style={styles.exploreGrid}>
+        {/* ── Minimalist Menu Lists ── */}
+        <View style={styles.listSection}>
+          <Text style={styles.listSectionTitle}>EXPLORE</Text>
+          <View style={styles.listBlock}>
             {[
-              { icon: 'heart-outline', label: 'WISHLIST', route: '/wishlist' },
-              { icon: 'images-outline', label: 'INSPO FEED', route: '/inspo' },
-              { icon: 'airplane-outline', label: 'TRIPS', route: '/trip-planner' },
-              { icon: 'calendar-outline', label: 'HISTORY', route: '/calendar-log' },
-            ].map((item, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.exploreCard}
-                onPress={() => router.push(item.route)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.exploreIconBg}>
-                  <Ionicons name={item.icon as any} size={20} color="#000" />
-                </View>
-                <Text style={styles.exploreLabel}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Preferences ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PREFERENCES</Text>
-          <View style={styles.menuContainer}>
-            {[
-              { icon: 'notifications-outline', label: 'Daily Reminders', value: notifs, onChange: setNotifs },
-              { icon: 'partly-sunny-outline', label: 'Weather Insights', value: weather, onChange: setWeather },
-              { icon: 'sparkles-outline', label: 'AI Recommendations', value: ai, onChange: setAi },
-            ].map((s, i, arr) => (
-              <View key={s.label}>
-                <View style={styles.settingRow}>
-                  <View style={styles.settingInfo}>
-                    <Ionicons name={s.icon as any} size={20} color="#000" />
-                    <Text style={styles.menuLabelText}>{s.label}</Text>
-                  </View>
-                  <Switch
-                    value={s.value}
-                    onValueChange={s.onChange}
-                    trackColor={{ false: '#EEE', true: '#000' }}
-                    thumbColor="#fff"
-                  />
-                </View>
-                {i < arr.length - 1 && <View style={styles.divider} />}
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Settings ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ACCOUNT</Text>
-          <View style={styles.menuContainer}>
-            {[
-              { icon: 'person-outline', label: 'Edit Profile', danger: false },
-              { icon: 'log-out-outline', label: 'Sign Out', danger: true },
+              { icon: 'heart-outline', label: 'Wishlist', route: '/wishlist' },
+              { icon: 'images-outline', label: 'Inspo Feed', route: '/inspo' },
+              { icon: 'airplane-outline', label: 'Trips', route: '/trip-planner' },
+              { icon: 'calendar-outline', label: 'History', route: '/calendar-log' },
             ].map((item, i, arr) => (
-              <View key={item.label}>
-                <TouchableOpacity
-                  style={styles.menuRow}
-                  onPress={() => { if (item.label === 'Sign Out') router.replace('/onboarding'); }}
-                >
-                  <Ionicons name={item.icon as any} size={20} color={item.danger ? Colors.error : '#000'} />
-                  <Text style={[styles.menuLabelText, item.danger && { color: Colors.error }]}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={14} color="#CCC" />
+              <View key={i}>
+                <TouchableOpacity style={styles.listRow} onPress={() => router.push(item.route)} activeOpacity={0.7}>
+                  <View style={styles.listRowLeft}>
+                    <Ionicons name={item.icon as any} size={22} color="#000" />
+                    <Text style={styles.listRowText}>{item.label}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
                 </TouchableOpacity>
-                {i < arr.length - 1 && <View style={styles.divider} />}
+                {i < arr.length - 1 && <View style={styles.listDivider} />}
               </View>
             ))}
+          </View>
+        </View>
+
+        <View style={styles.listSection}>
+          <Text style={styles.listSectionTitle}>PREFERENCES</Text>
+          <View style={styles.listBlock}>
+            <View style={styles.listRow}>
+              <View style={styles.listRowLeft}>
+                <Ionicons name="notifications-outline" size={22} color="#000" />
+                <Text style={styles.listRowText}>Daily Reminders</Text>
+              </View>
+              <Switch value={notifs} onValueChange={setNotifs} trackColor={{ false: '#EEE', true: '#000' }} thumbColor="#fff" />
+            </View>
+            <View style={styles.listDivider} />
+            <View style={styles.listRow}>
+              <View style={styles.listRowLeft}>
+                <Ionicons name="partly-sunny-outline" size={22} color="#000" />
+                <Text style={styles.listRowText}>Weather Insights</Text>
+              </View>
+              <Switch value={weather} onValueChange={setWeather} trackColor={{ false: '#EEE', true: '#000' }} thumbColor="#fff" />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.listSection}>
+          <View style={styles.listBlock}>
+            <TouchableOpacity style={styles.listRow} onPress={() => router.replace('/onboarding')} activeOpacity={0.7}>
+              <View style={styles.listRowLeft}>
+                <Ionicons name="log-out-outline" size={22} color="#FF3B30" />
+                <Text style={[styles.listRowText, { color: '#FF3B30' }]}>Sign Out</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -270,235 +229,192 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing['2xl'],
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.lg,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#000',
-    letterSpacing: 2,
-  },
-  settingsBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  profileHero: {
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 30,
-  },
-  avatarWrapper: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  avatarMain: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.md,
-  },
-  avatarInitials: {
-    fontSize: 36,
-    color: '#fff',
-    fontWeight: '900',
-  },
-  statusDot: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#4CAF50',
-    borderWidth: 3,
-    borderColor: '#fff',
-  },
-  profileName: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#000',
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  styleBadge: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 8,
-  },
-  styleBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#666',
-    letterSpacing: 1.5,
-  },
-  streakText: {
-    fontSize: 11,
+    fontSize: 28,
     fontWeight: '800',
     color: '#000',
-    letterSpacing: 1,
+    letterSpacing: -0.5,
+  },
+  settingsBtn: {
+    padding: 4,
   },
 
-  statsBar: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing['2xl'],
-    backgroundColor: '#000',
-    borderRadius: 24,
-    padding: 24,
-    ...Shadows.md,
-  },
-  statBox: {
-    flex: 1,
+  // Premium Hero
+  profileHero: {
     alignItems: 'center',
+    paddingVertical: 32,
+  },
+  avatarMain: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  avatarInitials: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: '#000',
+  },
+  profileName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4,
+  },
+  profileMeta: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+
+  // Seamless Stats
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  statItem: {
+    alignItems: 'center',
+    width: 100,
   },
   statValue: {
     fontSize: 24,
-    fontWeight: '900',
-    color: '#FFF',
-    marginBottom: 4,
+    fontWeight: '800',
+    color: '#000',
   },
   statLabel: {
     fontSize: 10,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#999',
-    letterSpacing: 1.5,
-  },
-
-  section: {
-    paddingHorizontal: Spacing['2xl'],
-    marginTop: 40,
-  },
-  sectionHeader: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#000',
-    letterSpacing: 2,
-    marginBottom: 16,
-  },
-
-  aiCard: {
-    flexDirection: 'row',
-    backgroundColor: '#F9F9F9',
-    borderRadius: 24,
-    padding: 16,
-    alignItems: 'center',
-    gap: 16,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  aiAvatarPreview: {
-    width: 80,
-    height: 110,
-    borderRadius: 16,
-    backgroundColor: '#EEE',
-    overflow: 'hidden',
-  },
-  aiAvatarImg: { width: '100%', height: '100%' },
-  aiAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  aiPlaceholderText: { fontSize: 8, fontWeight: '900', color: '#999' },
-  aiAvatarContent: { flex: 1, gap: 12 },
-  aiHintText: { fontSize: 13, color: '#666', lineHeight: 20, fontWeight: '500' },
-  aiUploadBtn: {
-    backgroundColor: '#000',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  aiUploadBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
-
-  exploreGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  exploreCard: {
-    width: (width - 48 - 16) / 2,
-    backgroundColor: '#F9F9F9',
-    borderRadius: 24,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  exploreIconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    ...Shadows.xs,
-  },
-  exploreLabel: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#000',
+    marginTop: 4,
     letterSpacing: 1,
   },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: '#EAEAEA',
+  },
 
-  menuContainer: {
-    backgroundColor: '#fff',
+  // VIP AI Card
+  aiCard: {
+    backgroundColor: '#000',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
+    padding: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  aiCardLeft: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  aiCardTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  aiCardSub: {
+    color: '#999',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  aiUploadBtn: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  aiUploadBtnText: {
+    color: '#000',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  aiCardRight: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#222',
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  settingRow: {
+
+  // Minimalist Lists
+  listSection: {
+    paddingHorizontal: 24,
+    marginBottom: 32,
+  },
+  listSectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#999',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+    paddingLeft: 4,
+  },
+  listBlock: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  settingInfo: {
+  listRowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
+    gap: 16,
   },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  menuLabelText: {
-    fontSize: 14,
-    fontWeight: '700',
+  listRowText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#000',
-    flex: 1,
   },
-  divider: {
+  listDivider: {
     height: 1,
-    backgroundColor: '#F9F9F9',
-    marginHorizontal: 16,
+    backgroundColor: '#EAEAEA',
+    marginLeft: 58, // Align with text
   },
+
   versionText: {
     textAlign: 'center',
     fontSize: 10,
+    fontWeight: '800',
     color: '#CCC',
-    fontWeight: '900',
-    letterSpacing: 3,
-    marginTop: 60,
+    letterSpacing: 2,
+    marginTop: 20,
     marginBottom: 40,
   },
 });

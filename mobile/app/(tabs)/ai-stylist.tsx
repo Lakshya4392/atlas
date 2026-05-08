@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Constants from 'expo-constants';
@@ -124,16 +125,58 @@ export default function AIStylistScreen() {
 
     try {
       const weatherData = await fetchWeather();
-      const aiRaw = await generateOutfitSuggestion(input, wardrobe, weatherData, USER_PROFILE);
+      const aiRaw = await generateOutfitSuggestion(input, wardrobe, weatherData, user || USER_PROFILE);
 
       let aiMsg: any;
       try {
         const parsed = JSON.parse(aiRaw);
-        const fullOutfit = parsed.outfit.map((o: any) => ({
-          ...o,
-          item: wardrobe.find(w => w.id === o.id)
-        })).filter((o: any) => o.item);
-        aiMsg = { type: 'ai', ...parsed, outfit: fullOutfit };
+        if (parsed.outfits && parsed.outfits.length > 0) {
+          console.log(`🎯 AI generated ${parsed.outfits.length} outfits, searching products...`);
+          
+          // For each outfit, call the batch search endpoint
+          const fullOutfits = await Promise.all(parsed.outfits.map(async (outfitData: any) => {
+            try {
+              const searchRes = await fetch(`${BACKEND_URL}/api/outfit/search-items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, queries: outfitData.items }),
+              });
+              const searchData = await searchRes.json();
+              
+              if (searchData.success && searchData.items) {
+                return {
+                  ...outfitData,
+                  items: searchData.items.map((item: any) => ({
+                    ...item,
+                    item: {
+                      id: item.closetItemId || `product_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                      name: item.name || item.title,
+                      imageUrl: item.imageUrl,
+                      brand: item.brand,
+                      price: item.price,
+                      link: item.link,
+                      source: item.source,
+                    }
+                  })),
+                };
+              }
+            } catch (e) {
+              console.error('Outfit search pipeline error:', e);
+            }
+            // Fallback: return outfit with no images
+            return {
+              ...outfitData,
+              items: outfitData.items.map((i: any) => ({
+                ...i,
+                item: { id: 'fallback', name: i.name, imageUrl: null }
+              })),
+            };
+          }));
+          
+          aiMsg = { type: 'ai', ...parsed, outfits: fullOutfits };
+        } else {
+          aiMsg = { type: 'ai', ...parsed };
+        }
       } catch {
         aiMsg = { type: 'ai', stylingAdvice: aiRaw };
       }
@@ -167,6 +210,10 @@ export default function AIStylistScreen() {
     setInput('');
     setCurrentSessionId(null);
     setShowHistory(false);
+  };
+
+  const handlePickImage = () => {
+    alert('Visual search coming soon!');
   };
 
   // ── Handle Try-On ──
@@ -264,6 +311,35 @@ export default function AIStylistScreen() {
     }
   };
 
+  const renderMasonryItem = (outfitItem: any, isTall: boolean) => {
+    const style = isTall ? styles.masonryTall : styles.masonryShort;
+    if (!outfitItem || !outfitItem.item) return <View style={style} />;
+    const uri = outfitItem.item.imageUrl;
+    const isFromCloset = outfitItem.item.source === 'from_closet';
+    
+    if (uri) {
+      return (
+        <View style={[style, { overflow: 'hidden' }]}>
+          <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          {isFromCloset && (
+            <View style={styles.closetBadge}>
+              <Ionicons name="checkmark-circle" size={10} color="#fff" />
+              <Text style={styles.closetBadgeText}>YOUR CLOSET</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+    return (
+      <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F5F5', padding: 8 }]}>
+        <Ionicons name="shirt-outline" size={24} color="#CCC" />
+        <Text style={{ fontSize: 10, color: '#999', marginTop: 4, textAlign: 'center', fontWeight: '600' }} numberOfLines={2}>
+          {outfitItem.item.name || outfitItem.searchQuery || 'Item'}
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -272,17 +348,22 @@ export default function AIStylistScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* ── Top Header Controls ── */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.circleBtn} onPress={() => setShowHistory(true)} activeOpacity={0.7}>
-            <Ionicons name="time-outline" size={20} color={Colors.textPrimary} />
+        {/* Top Header (Matching Image) */}
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.topBarCircle} onPress={() => router.replace('/(tabs)')}>
+            <Ionicons name="chevron-back" size={20} color="#000" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.newChatBtn} onPress={startNewChat} activeOpacity={0.7}>
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.newChatText}>NEW CHAT</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.circleBtn} activeOpacity={0.7}>
-            <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textPrimary} />
+
+          <View style={styles.weatherWidget}>
+            <Ionicons name="sunny" size={20} color="#FFA500" />
+            <View>
+              <Text style={styles.weatherTemp}>32°</Text>
+              <Text style={styles.weatherHiLo}>H:33° L:26°</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.topBarCircle} onPress={() => setShowHistory(true)}>
+            <Ionicons name="time-outline" size={20} color="#000" />
           </TouchableOpacity>
         </View>
 
@@ -293,13 +374,15 @@ export default function AIStylistScreen() {
           contentContainerStyle={styles.chatContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.welcomeContainer}>
-            <View style={styles.aiAvatarSmall}>
-              <Ionicons name="sparkles" size={16} color="#fff" />
+          {messages.length === 0 && (
+            <View style={styles.welcomeContainer}>
+              <View style={styles.aiAvatarSmall}>
+                <Ionicons name="sparkles" size={16} color="#fff" />
+              </View>
+              <Text style={styles.welcomeTitle}>ATLA AI STYLIST</Text>
+              <Text style={styles.welcomeSub}>Personalized styling from your closet</Text>
             </View>
-            <Text style={styles.welcomeTitle}>ATLA AI STYLIST</Text>
-            <Text style={styles.welcomeSub}>Personalized styling from your closet</Text>
-          </View>
+          )}
 
           {messages.length === 0 && (
             <View style={styles.suggestionsContainer}>
@@ -324,95 +407,74 @@ export default function AIStylistScreen() {
               key={index}
               style={[
                 styles.messageRow,
-                msg.type === 'user' ? styles.userRow : styles.aiRow
+                msg.type === 'user' ? styles.userRow : styles.aiRow,
+                (msg.outfits && msg.outfits.length > 0) ? { paddingHorizontal: 0 } : { paddingHorizontal: 20 }
               ]}
             >
-              {msg.type === 'ai' && (
+              {msg.type === 'ai' && !(msg.outfits && msg.outfits.length > 0) && (
                 <View style={styles.aiAvatarBubble}>
                   <Ionicons name="sparkles" size={12} color="#000" />
                 </View>
               )}
-              <View style={styles.messageBubbleContainer}>
+              <View style={[styles.messageBubbleContainer, (msg.outfits && msg.outfits.length > 0) && { maxWidth: '100%', width: '100%' }]}>
                 {msg.type === 'user' ? (
                   <View style={styles.userBubble}>
                     <Text style={styles.userText}>{msg.text}</Text>
                   </View>
                 ) : (
                   <View style={styles.aiContent}>
-                    {/* Visual Outfit Cards */}
-                    {msg.outfit && msg.outfit.length > 0 && (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.outfitScroll}>
-                        {msg.outfit.map((o: any, idx: number) => (
-                          <View key={idx} style={styles.outfitCard}>
-                            <View style={styles.cardImageWrapper}>
-                              {o.item.imageUrl ? (
-                                <Image source={{ uri: o.item.imageUrl }} style={styles.cardImage} />
-                              ) : (
-                                <View style={styles.placeholderImage}>
-                                  <Ionicons name="shirt-outline" size={32} color={Colors.textTertiary} />
-                                </View>
-                              )}
+                    {/* Visual Outfit Cards (Masonry Style) */}
+                    {msg.outfits && msg.outfits.length > 0 && (
+                      <View style={{ marginTop: 0 }}>
+                        {msg.outfits.map((outfit: any, oIdx: number) => (
+                          <View key={oIdx} style={styles.modernCard}>
+                            <View style={styles.modernHeader}>
+                              <Text style={styles.modernTitle}>{outfit.name || 'AI Suggested Look'}</Text>
+                              <Text style={styles.modernSub}>{outfit.occasion || 'Styled for you'}</Text>
                             </View>
-                            <Text style={styles.cardItemName}>{o.item.name.toUpperCase()}</Text>
-                            <TouchableOpacity 
-                              style={styles.tryOnBtn} 
-                              onPress={() => handleTryOn(o.item)}
-                              activeOpacity={0.8}
-                            >
-                              <Ionicons name="sparkles" size={10} color="#fff" />
-                              <Text style={styles.tryOnText}>TRY ON ME</Text>
-                            </TouchableOpacity>
+
+                            <View style={styles.masonryGrid}>
+                              <View style={styles.masonryCol}>
+                                {renderMasonryItem(outfit.items[0], true)}
+                                {renderMasonryItem(outfit.items[2], false)}
+                              </View>
+                              <View style={styles.masonryCol}>
+                                {renderMasonryItem(outfit.items[1], false)}
+                                {renderMasonryItem(outfit.items[3], true)}
+                              </View>
+                            </View>
+
+                            {/* Item Labels Row */}
+                            <View style={styles.itemLabelsRow}>
+                              {outfit.items.slice(0, 4).map((itm: any, iIdx: number) => (
+                                <View key={iIdx} style={styles.itemLabel}>
+                                  <Text style={styles.itemLabelType}>{(itm.type || '').toUpperCase()}</Text>
+                                  <Text style={styles.itemLabelName} numberOfLines={1}>{itm.item?.name || itm.name || ''}</Text>
+                                  {itm.item?.price ? <Text style={styles.itemLabelPrice}>{itm.item.price}</Text> : null}
+                                </View>
+                              ))}
+                            </View>
+
+                            <Text style={styles.modernAdvice}>{outfit.stylingAdvice}</Text>
+
+                            <View style={styles.modernActions}>
+                              <View style={styles.modernActionIcons}>
+                                <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#000" /></TouchableOpacity>
+                                <TouchableOpacity><Ionicons name="pencil-outline" size={24} color="#000" /></TouchableOpacity>
+                                <TouchableOpacity><Ionicons name="thumbs-down-outline" size={24} color="#000" /></TouchableOpacity>
+                                <TouchableOpacity><Ionicons name="paper-plane-outline" size={24} color="#000" /></TouchableOpacity>
+                              </View>
+                              <TouchableOpacity style={styles.createAvatarBtn} onPress={() => handleTryOn(outfit.items[0]?.item)}>
+                                <Text style={styles.createAvatarText}>Create Avatar</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         ))}
-                      </ScrollView>
+                      </View>
                     )}
 
-                    <View style={styles.aiTextContent}>
-                      {msg.weatherContext && (
-                        <View style={styles.weatherBadge}>
-                          <Text style={styles.weatherBadgeText}>{msg.weatherContext.toUpperCase()}</Text>
-                        </View>
-                      )}
-                      <Text style={styles.aiText}>{msg.stylingAdvice}</Text>
-                      {msg.idealAddition && (
-                        <View style={styles.additionContainer}>
-                          <Ionicons name="add-circle-outline" size={14} color={Colors.textMuted} />
-                          <Text style={styles.additionText}>IDEAL ADDITION: {msg.idealAddition.toUpperCase()}</Text>
-                        </View>
-                      )}
-                      {/* Save outfit button */}
-                      {msg.outfit && msg.outfit.length > 0 && (
-                        <TouchableOpacity
-                          style={styles.saveOutfitBtn}
-                          onPress={async () => {
-                            if (!userId) return;
-                            try {
-                              const res = await fetch(`${BACKEND_URL}/api/outfits`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  userId,
-                                  name: 'AI Look — ' + new Date().toLocaleDateString(),
-                                  occasion: 'Casual',
-                                  itemIds: msg.outfit.map((o: any) => o.id).filter(Boolean),
-                                  aiGenerated: true,
-                                  weather: msg.weatherContext || '',
-                                }),
-                              });
-                              const data = await res.json();
-                              if (data.success) alert('Outfit saved to your collection!');
-                            } catch (e) {
-                              console.error('Save outfit error:', e);
-                            }
-                          }}
-                        >
-                          <Ionicons name="bookmark-outline" size={12} color="#fff" />
-                          <Text style={styles.saveOutfitText}>SAVE OUTFIT</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                )}
+                      </View>
+                    )}
               </View>
             </View>
           ))}
@@ -429,36 +491,32 @@ export default function AIStylistScreen() {
           )}
         </ScrollView>
 
-        {/* ── Input Area ── */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
-          <View style={styles.inputContainer}>
-            <View style={styles.inputWrapper}>
-              <TouchableOpacity style={styles.inputActionBtn}>
-                <Ionicons name="mic-outline" size={20} color={Colors.textMuted} />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.input}
-                placeholder="Ask your stylist..."
-                placeholderTextColor={Colors.textLight}
-                value={input}
-                onChangeText={setInput}
-                multiline
-              />
-              <TouchableOpacity
-                style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
-                onPress={handleSend}
-                disabled={!input.trim() || loading}
-              >
-                <Ionicons
-                  name="arrow-up"
-                  size={20}
-                  color={input.trim() ? '#fff' : Colors.textMuted}
-                />
-              </TouchableOpacity>
-            </View>
+        {/* Floating Pill Input */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.floatingInputWrapper}>
+          <View style={styles.floatingInputInner}>
+            <TouchableOpacity style={styles.floatingInputIcon} onPress={handlePickImage}>
+              <Ionicons name="image-outline" size={20} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingInputIcon}>
+              <Ionicons name="shirt-outline" size={20} color="#666" />
+            </TouchableOpacity>
+            
+            <TextInput
+              style={styles.floatingInput}
+              placeholder="Refine your looks..."
+              placeholderTextColor="#999"
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={handleSend}
+              multiline={false}
+            />
+            
+            <TouchableOpacity style={styles.floatingInputIcon}>
+              <Ionicons name="mic-outline" size={20} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.floatingInputIcon, styles.floatingSendBtn]} onPress={handleSend} disabled={loading}>
+              {loading ? <ActivityIndicator color="#000" /> : <Ionicons name="arrow-forward" size={16} color="#ccc" />}
+            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -541,6 +599,33 @@ export default function AIStylistScreen() {
                 <View style={styles.modalFooter}>
                   <Text style={styles.modalFooterTitle}>VIRTUAL LOOK</Text>
                   <Text style={styles.modalFooterSub}>AI-generated try-on result.</Text>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#000', paddingVertical: 12, borderRadius: 24, marginTop: 12, alignItems: 'center' }}
+                    onPress={async () => {
+                      if (!userId) return;
+                      try {
+                        const res = await fetch(`${BACKEND_URL}/api/outfits`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            userId,
+                            name: 'AI Avatar Look',
+                            occasion: 'Virtual Try-On',
+                            itemIds: [],
+                            aiGenerated: true,
+                            imageUrl: tryOnResult,
+                          }),
+                        });
+                        const d = await res.json();
+                        if (d.success) {
+                          alert('Look saved to Outfits!');
+                          setTryOnResult(null);
+                        }
+                      } catch (e) {}
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 1 }}>SAVE TO OUTFITS</Text>
+                  </TouchableOpacity>
                 </View>
               </>
             ) : null}
@@ -595,8 +680,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chatContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 0,
+    paddingBottom: 100,
   },
   welcomeContainer: {
     alignItems: 'center',
@@ -878,46 +963,195 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '500',
   },
-  inputContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 30,
-    paddingTop: 10,
+  // Modern Masonry Card Layout
+  modernCard: {
+    backgroundColor: '#fff',
+    borderRadius: 0,
+    marginBottom: 40,
+    paddingVertical: 16,
   },
-  inputWrapper: {
+  modernHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  modernTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000',
+  },
+  modernSub: {
+    fontSize: 14,
+    color: '#666',
+  },
+  masonryGrid: {
+    flexDirection: 'row',
+    gap: 2,
+    paddingHorizontal: 0,
+  },
+  masonryCol: {
+    flex: 1,
+    gap: 2,
+  },
+  masonryTall: {
+    width: '100%',
+    aspectRatio: 0.7,
+    backgroundColor: '#F5F5F5',
+  },
+  masonryShort: {
+    width: '100%',
+    aspectRatio: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  closetBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 25,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    ...Shadows.md,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 3,
   },
-  inputActionBtn: {
+  closetBadgeText: {
+    color: '#fff',
+    fontSize: 7,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  itemLabelsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    marginTop: 12,
+    gap: 6,
+  },
+  itemLabel: {
+    flex: 1,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 10,
+    padding: 8,
+    alignItems: 'center',
+  },
+  itemLabelType: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#999',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  itemLabelName: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+  itemLabelPrice: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#000',
+    marginTop: 2,
+  },
+  modernAdvice: {
+    fontSize: 14,
+    color: '#333',
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  modernActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  modernActionIcons: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  createAvatarBtn: {
+    backgroundColor: '#000',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  createAvatarText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+
+  // Floating Input
+  floatingInputWrapper: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 20 : 10,
+    left: 16,
+    right: 16,
+  },
+  floatingInputInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 30,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  floatingInputIcon: {
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 4,
   },
-  input: {
+  floatingInput: {
     flex: 1,
     fontSize: 14,
-    color: Colors.textPrimary,
-    maxHeight: 100,
+    color: '#000',
     paddingHorizontal: 8,
-    fontWeight: '500',
   },
-  sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#000',
+  floatingSendBtn: {
+    backgroundColor: '#F0F0F0',
+  },
+
+  // Top Bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  topBarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnDisabled: {
-    backgroundColor: 'transparent',
+  weatherWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  weatherTemp: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  weatherHiLo: {
+    fontSize: 10,
+    color: '#666',
   },
 
   // ── Chat History ──

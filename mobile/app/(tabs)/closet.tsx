@@ -74,12 +74,12 @@ export default function ClosetScreen() {
             .then(res => res.json())
             .then(data => {
               if (data.success) setItems(data.items || []);
-              else setItems(CLOTHING_ITEMS);
+              else setItems([]);
             })
-            .catch(() => setItems(CLOTHING_ITEMS))
+            .catch(() => setItems([]))
             .finally(() => setLoading(false));
         } else {
-          setItems(CLOTHING_ITEMS);
+          setItems([]);
           setLoading(false);
         }
       });

@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -8,13 +9,17 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  style     String   @default("Smart Casual")
-  streak    Int      @default(0)
-  level     String   @default("Style Explorer")
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  style           String   @default("Smart Casual")
+  preferredBrands String[] @default([])
+  occupation      String?
+  wearPreference  String?
+  hearSource      String?
+  streak          Int      @default(0)
+  level           String   @default("Style Explorer")
+  createdAt       DateTime @default(now())
   
   clothes   ClothingItem[]
   outfits   Outfit[]
@@ -45,6 +50,7 @@ model Outfit {
   rating      Int      @default(0)
   aiGenerated Boolean  @default(false)
   weather     String?
+  imageUrl    String?
   date        DateTime @default(now())
 
   userId      String
@@ -63,4 +69,20 @@ model OutfitItem {
   clothingItem   ClothingItem @relation(fields: [clothingItemId], references: [id], onDelete: Cascade)
 
   @@unique([outfitId, clothingItemId])
+}
+
+model CachedProduct {
+  id        String   @id @default(cuid())
+  title     String
+  brand     String
+  price     String
+  thumbnail String
+  link      String
+  source    String
+  query     String
+  category  String?
+  createdAt DateTime @default(now())
+
+  @@index([query])
+  @@index([category])
 }

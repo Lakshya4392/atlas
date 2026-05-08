@@ -51,9 +51,23 @@ export default function ItemDetailScreen() {
         if (data.success && data.item) {
           setItem(data.item);
           setFav(data.item.favorite);
+          setLoading(false);
+          return;
         }
       } catch (e) {
-        console.error('Failed to fetch item details:', e);
+        console.error('Failed to fetch local item:', e);
+      }
+
+      // 3. Try Cached SerpAPI item
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/fashion/item/${id}`);
+        const data = await response.json();
+        if (data.success && data.item) {
+          setItem(data.item);
+          setFav(false);
+        }
+      } catch (e) {
+        console.error('Failed to fetch serpapi item:', e);
       } finally {
         setLoading(false);
       }
@@ -142,8 +156,8 @@ export default function ItemDetailScreen() {
               <Text style={styles.productName}>{item.name?.toUpperCase() || 'UNTITLED'}</Text>
               <Text style={styles.productBrand}>{item.brand || 'Personal Archive'}</Text>
             </View>
-            <TouchableOpacity style={styles.wearBtn} activeOpacity={0.85}>
-              <Text style={styles.wearBtnText}>WEAR TODAY</Text>
+            <TouchableOpacity style={styles.wearBtn} activeOpacity={0.85} onPress={() => router.push('/(tabs)/ai-stylist')}>
+              <Text style={styles.wearBtnText}>TRY ON ME</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -184,11 +198,11 @@ export default function ItemDetailScreen() {
           <Text style={styles.detailsLabel}>DETAILS</Text>
           <View style={styles.detailsCard}>
             {[
-              { label: 'Brand', value: item.brand || 'Unknown' },
+              { label: 'Brand / Source', value: item.brand || item.source || 'Unknown' },
+              { label: 'Price', value: item.price || 'N/A' },
               { label: 'Category', value: item.category || 'Unknown' },
               { label: 'Color', value: item.color || 'Unknown' },
               { label: 'Times Worn', value: `${item.wearCount || 0}×` },
-              { label: 'Last Worn', value: item.lastWorn ?? 'Never' },
             ].map((d, i, arr) => (
               <View key={d.label} style={[styles.detailRow, i < arr.length - 1 && styles.detailRowBorder]}>
                 <Text style={styles.detailLabel}>{d.label}</Text>

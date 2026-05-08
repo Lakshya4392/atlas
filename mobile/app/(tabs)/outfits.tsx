@@ -142,20 +142,24 @@ export default function OutfitsScreen() {
                   activeOpacity={0.85}
                 >
                   <View style={styles.cardImage}>
-                    <View style={styles.imageGrid}>
-                      {pieces.slice(0, 4).map((p: any, i: number) => (
-                        <View key={i} style={[styles.imageThumb, pieces.length === 1 && styles.imageThumbFull]}>
-                          {p.imageUrl ? (
-                            <Image source={{ uri: p.imageUrl }} style={styles.thumbImg} resizeMode="cover" />
-                          ) : (
-                            <Ionicons name="shirt-outline" size={16} color="#999" />
-                          )}
-                        </View>
-                      ))}
-                      {pieces.length === 0 && (
-                        <Ionicons name="layers-outline" size={32} color="#ccc" />
-                      )}
-                    </View>
+                    {item.imageUrl ? (
+                      <Image source={{ uri: item.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : (
+                      <View style={styles.imageGrid}>
+                        {pieces.slice(0, 4).map((p: any, i: number) => (
+                          <View key={i} style={[styles.imageThumb, pieces.length === 1 && styles.imageThumbFull]}>
+                            {p.imageUrl ? (
+                              <Image source={{ uri: p.imageUrl }} style={styles.thumbImg} resizeMode="cover" />
+                            ) : (
+                              <Ionicons name="shirt-outline" size={16} color="#999" />
+                            )}
+                          </View>
+                        ))}
+                        {pieces.length === 0 && (
+                          <Ionicons name="layers-outline" size={32} color="#ccc" />
+                        )}
+                      </View>
+                    )}
                     {item.aiGenerated && (
                       <View style={styles.aiBadge}>
                         <Ionicons name="sparkles" size={8} color="#000" />
