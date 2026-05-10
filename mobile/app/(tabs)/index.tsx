@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Image, TextInput, Dimensions, Platform, ActivityIndicator, RefreshControl
+  TouchableOpacity, Image, TextInput, Dimensions, Platform, ActivityIndicator, RefreshControl, Animated
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,6 +59,47 @@ const ItemCard = ({ item, index }: { item: any, index: number }) => {
         <Text style={styles.brand}>{item.brand || 'No Brand'}</Text>
       </View>
     </TouchableOpacity>
+  );
+};
+
+const SkeletonCard = ({ index }: { index: number }) => {
+  const animValue = React.useRef(new Animated.Value(0.5)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+
+  const isTall = index % 3 === 0;
+  const cardHeight = isTall ? 280 : 220;
+
+  return (
+    <View style={[styles.itemCard, { height: cardHeight + 60 }]}>
+      <Animated.View style={[styles.imageContainer, { height: cardHeight, backgroundColor: '#E5E5E5', opacity: animValue }]} />
+      <View style={styles.info}>
+        <Animated.View style={{ width: '80%', height: 12, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue, marginBottom: 6 }} />
+        <Animated.View style={{ width: '50%', height: 10, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue }} />
+      </View>
+    </View>
+  );
+};
+
+const SkeletonHero = () => {
+  const animValue = React.useRef(new Animated.Value(0.5)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View style={[styles.heroBanner, { opacity: animValue, backgroundColor: '#E5E5E5', marginHorizontal: 20, marginBottom: 32 }]} />
   );
 };
 
@@ -140,22 +182,22 @@ export default function DashboardScreen() {
           <Text style={styles.headerSub}>WARDROBE OS</Text>
         </View>
 
-        {/* ── Search Bar ── */}
+        {/* ── Premium Search Bar Trigger ── */}
         <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
+          <TouchableOpacity 
+            style={styles.searchBar} 
+            activeOpacity={0.9}
+            onPress={() => router.push('/search')}
+          >
             <Ionicons name="search-outline" size={18} color="#999" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search your pieces..."
-              placeholderTextColor="#999"
-              value={query}
-              onChangeText={setQuery}
-            />
-          </View>
+            <Text style={[styles.searchInput, { color: '#999', paddingTop: Platform.OS === 'ios' ? 0 : 2 }]}>Search brands, styles, colors...</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Hero section ── */}
-        {filtered.length > 0 ? (
+        {loading ? (
+          <SkeletonHero />
+        ) : filtered.length > 0 ? (
           <ScrollView 
             horizontal 
             pagingEnabled 
@@ -175,47 +217,23 @@ export default function DashboardScreen() {
                   resizeMode="cover"
                 />
                 <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.8)']}
-                  style={styles.heroOverlay}
-                >
+                  colors={['transparent', 'rgba(0,0,0,0.5)']}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <BlurView intensity={30} tint="dark" style={styles.heroOverlay}>
                   <View style={styles.heroContent}>
                     <Text style={styles.heroTag}>TRENDING NOW</Text>
                     <Text style={styles.heroTitle} numberOfLines={1}>{(item.name || item.title || 'STYLE').toUpperCase()}</Text>
                     <Text style={styles.heroSub}>{item.brand || 'Discover this piece'}</Text>
                   </View>
                   <View style={styles.heroBtn}>
-                    <Ionicons name="arrow-forward" size={18} color="#000" />
+                    <Text style={styles.heroBtnText}>VIEW</Text>
                   </View>
-                </LinearGradient>
+                </BlurView>
               </TouchableOpacity>
             ))}
           </ScrollView>
-        ) : (
-          <TouchableOpacity 
-            style={[styles.heroBanner, styles.heroBannerScroll]} 
-            activeOpacity={0.9} 
-            onPress={() => router.push('/(tabs)/ai-stylist')}
-          >
-            <Image 
-              source={require('../../assets/images/denim_jacket.png')} 
-              style={styles.heroImage}
-              resizeMode="cover"
-            />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.8)']}
-              style={styles.heroOverlay}
-            >
-              <View style={styles.heroContent}>
-                <Text style={styles.heroTag}>FEATURED</Text>
-                <Text style={styles.heroTitle}>AI STYLE GUIDE</Text>
-                <Text style={styles.heroSub}>Let ATLA curate your day</Text>
-              </View>
-              <View style={styles.heroBtn}>
-                <Ionicons name="sparkles" size={18} color="#000" />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
+        ) : null}
 
         {/* ── Section ── */}
         <View style={styles.sectionHeader}>
@@ -225,8 +243,17 @@ export default function DashboardScreen() {
 
         {/* ── Pinterest Masonry Grid ── */}
         {loading ? (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#000" />
+          <View style={styles.masonryGrid}>
+            <View style={styles.masonryColumn}>
+              {[0, 2, 4].map(idx => (
+                <SkeletonCard key={`skel-${idx}`} index={idx} />
+              ))}
+            </View>
+            <View style={styles.masonryColumn}>
+              {[1, 3, 5].map(idx => (
+                <SkeletonCard key={`skel-${idx}`} index={idx} />
+              ))}
+            </View>
           </View>
         ) : filtered.length === 0 ? (
           <View style={styles.empty}>
@@ -329,17 +356,20 @@ const styles = StyleSheet.create({
   },
   heroOverlay: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
+    bottom: 20,
+    left: 20,
+    right: 20,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 24,
+    padding: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   heroContent: {
     gap: 4,
+    flex: 1,
+    paddingRight: 16,
   },
   heroTag: {
     color: '#fff',
@@ -350,24 +380,29 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: 1,
   },
   heroSub: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
     opacity: 0.9,
   },
   heroBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.md,
+  },
+  heroBtnText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 
   sectionHeader: {

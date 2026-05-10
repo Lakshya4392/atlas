@@ -280,6 +280,402 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// ── AI Wardrobe Extraction Pipeline (Cloudinary + HuggingFace) ──
+// Step 1: Cloudinary background removal
+// Step 2: HuggingFace clothing segmentation (segformer_b2_clothes)
+// Step 3: HuggingFace image enhancement (flat-lay)
+// Step 4: Gemini AI tagging (name, color, category, brand)
+// ══════════════════════════════════════════════════════════════
+
+// ── Rate Limiter: 1 extraction at a time per user ──
+const extractionLocks = new Map<string, number>(); // userId -> timestamp
+const EXTRACTION_COOLDOWN_MS = 30_000; // 30 second cooldown between requests
+
+function isRateLimited(userId: string): boolean {
+  const lastTime = extractionLocks.get(userId);
+  if (lastTime && Date.now() - lastTime < EXTRACTION_COOLDOWN_MS) return true;
+  return false;
+}
+
+// ── Helper: Call HuggingFace Inference API ──
+async function callHuggingFace(model: string, imageBuffer: Buffer, hfToken: string): Promise<Buffer> {
+  const url = `https://router.huggingface.co/hf-inference/models/${model}`;
+  console.log(`   🔗 HF calling: ${url}`);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${hfToken}`,
+    },
+    body: imageBuffer,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`HF error (${response.status}): ${errText.substring(0, 200)}`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+// ── Helper: AI Tag via Groq (Llama 3.2 Vision) ──
+async function aiTagGarment(imageUrl: string): Promise<{ name: string; category: string; color: string; brand: string }> {
+  const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  if (!GROQ_KEY) {
+    console.log('   ⚠️ No Groq key, using fallback tags');
+    return { name: 'Clothing Item', category: 'tops', color: 'Unknown', brand: 'Unknown' };
+  }
+
+  try {
+    console.log('   🔗 Calling Groq Vision API...');
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              },
+              {
+                type: 'text',
+                text: `You are a fashion AI. Analyze this clothing item image and return ONLY a valid JSON object with these exact keys:
+{
+  "name": "descriptive name of the garment, e.g. 'Navy Blue Slim Fit Chinos'",
+  "category": "one of: tops, bottoms, outerwear, shoes, accessories, dresses, activewear",
+  "color": "primary color, e.g. 'Navy Blue'",
+  "brand": "brand name if visible, otherwise 'Unknown'"
+}
+Return ONLY the JSON, no markdown, no explanation.`
+              }
+            ]
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 200,
+      }),
+    });
+
+    if (!groqRes.ok) {
+      const errBody = await groqRes.text();
+      console.error(`   ⚠️ Groq HTTP ${groqRes.status}: ${errBody.substring(0, 200)}`);
+      throw new Error('Groq API failed');
+    }
+
+    const groqData = await groqRes.json();
+    const text = groqData?.choices?.[0]?.message?.content || '';
+    console.log(`   📝 Groq response: ${text.substring(0, 150)}`);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e: any) {
+    console.error('   ⚠️ Groq tagging failed:', e.message);
+  }
+  return { name: 'Clothing Item', category: 'tops', color: 'Unknown', brand: 'Unknown' };
+}
+
+// ── Main Extraction Endpoint ──
+app.post('/api/clothes/extract', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image uploaded' });
+    }
+
+    const userId = req.body.userId || 'anonymous';
+
+    // ── Rate limit check ──
+    if (isRateLimited(userId)) {
+      const remaining = Math.ceil((EXTRACTION_COOLDOWN_MS - (Date.now() - (extractionLocks.get(userId) || 0))) / 1000);
+      return res.status(429).json({
+        success: false,
+        error: `Please wait ${remaining}s before extracting another item. This protects against API limits.`,
+        retryAfter: remaining,
+      });
+    }
+    extractionLocks.set(userId, Date.now());
+
+    console.log('\n👗 ═══ AI WARDROBE EXTRACTION PIPELINE ═══');
+    console.log(`   User: ${userId}`);
+
+    const imageBuffer = (req as any).file.buffer;
+    console.log(`   Image size: ${(imageBuffer.length / 1024).toFixed(0)} KB`);
+
+    // ── STEP 1: Clothing Segmentation + Extraction ──
+    console.log('   [1/3] 👔 Extracting clothing (HF Segformer + Sharp)...');
+
+    let clothingBuffer: Buffer;
+    const MAX_RETRIES = 3;
+    const HF_TOKEN = process.env.HF_TOKEN || process.env.HF_TOKEN_2 || '';
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`   🔄 Attempt ${attempt}/${MAX_RETRIES}...`);
+        const sharpModule = await import('sharp');
+        const sharp = sharpModule.default;
+
+        // Call HuggingFace segformer via raw API (SDK mask format is broken)
+        console.log('   📡 Calling HuggingFace segformer_b2_clothes...');
+        const segRes = await fetch('https://router.huggingface.co/hf-inference/models/mattmdjaga/segformer_b2_clothes', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${HF_TOKEN}`,
+            'Content-Type': 'image/jpeg',
+          },
+          body: imageBuffer,
+        });
+
+        if (!segRes.ok) {
+          const errText = await segRes.text();
+          throw new Error(`HF API error (${segRes.status}): ${errText.substring(0, 200)}`);
+        }
+
+        const segments = await segRes.json();
+        console.log(`   📊 Got ${segments.length} segments: ${segments.map((s: any) => s.label).join(', ')}`);
+
+        // Keep ONLY clothing labels
+        const clothingLabels = [
+          'upper-clothes', 'lower-clothes', 'skirt', 'pants', 'dress',
+          'belt', 'left-shoe', 'right-shoe', 'hat', 'bag', 'scarf',
+        ];
+
+        const clothingSegments = segments.filter((s: any) =>
+          clothingLabels.some(label => s.label.toLowerCase().includes(label.toLowerCase()))
+        );
+
+        if (clothingSegments.length === 0) {
+          throw new Error('No clothing detected in image. Try a clearer photo.');
+        }
+
+        // Smart Extraction: ONLY extract individual items (Top and Bottom separately)
+        // No more "Full Outfit" combined slide unless it can't be separated.
+        const upperLabels = ['upper-clothes', 'dress', 'shirt', 'jacket', 'coat', 'top'];
+        const lowerLabels = ['pants', 'lower-clothes', 'skirt', 'shorts', 'left-leg', 'right-leg', 'belt'];
+        
+        const itemsToProcess: any[][] = [];
+        
+        const upperSegs = clothingSegments.filter((s: any) => upperLabels.some(l => s.label.toLowerCase().includes(l)));
+        const lowerSegs = clothingSegments.filter((s: any) => lowerLabels.some(l => s.label.toLowerCase().includes(l)));
+        
+        if (upperSegs.length > 0) itemsToProcess.push(upperSegs);
+        if (lowerSegs.length > 0) itemsToProcess.push(lowerSegs);
+        
+        // Fallback: If AI couldn't classify it as top or bottom, just process the whole thing
+        if (itemsToProcess.length === 0) {
+          itemsToProcess.push(clothingSegments);
+        }
+
+        console.log(`   👕 Detected ${itemsToProcess.length} distinct garment items to extract.`);
+
+        const metadata = await sharp(imageBuffer).metadata();
+        const width = metadata.width!;
+        const height = metadata.height!;
+
+        const extractedItems = [];
+
+        // Process each clothing item group
+        for (let i = 0; i < itemsToProcess.length; i++) {
+          const itemSegments = itemsToProcess[i];
+          console.log(`\n   --- Processing Item ${i + 1}/${itemsToProcess.length} ---`);
+
+          // 1. Combine masks for this specific item
+          let combinedMaskBuffer = await sharp({
+            create: { width, height, channels: 3, background: { r: 0, g: 0, b: 0 } }
+          }).png().toBuffer();
+
+          for (const seg of itemSegments) {
+            const maskBuf = Buffer.from(seg.mask, 'base64');
+            const resizedMask = await sharp(maskBuf).resize(width, height, { fit: 'fill' }).greyscale().png().toBuffer();
+            combinedMaskBuffer = await sharp(combinedMaskBuffer).composite([{ input: resizedMask, blend: 'add' as any }]).png().toBuffer();
+          }
+
+          // Blur the mask slightly for smooth anti-aliased (feathered) edges
+          const alphaMask = await sharp(combinedMaskBuffer)
+            .greyscale()
+            .resize(width, height)
+            .blur(1.5) // Soften mask edges for a premium studio look
+            .raw()
+            .toBuffer();
+          
+          const originalRGBA = await sharp(imageBuffer).resize(width, height).ensureAlpha().raw().toBuffer();
+
+          const resultRGBA = Buffer.from(originalRGBA);
+          for (let p = 0; p < alphaMask.length; p++) {
+            // Apply smooth transparency instead of harsh jagged edges
+            resultRGBA[p * 4 + 3] = alphaMask[p];
+          }
+
+          // First, trim transparent pixels and get the bounding box size
+          const trimmedData = await sharp(resultRGBA, { raw: { width, height, channels: 4 } })
+            .trim({ threshold: 5 })
+            .toBuffer({ resolveWithObject: true });
+
+          const trimWidth = trimmedData.info.width;
+          const trimHeight = trimmedData.info.height;
+
+          // Smart Noise Rejection: Prevent false positives (like AI detecting a shadow as a shirt)
+          // If the item (Slide 2 or 3) takes up less than 5% of the total image area, discard it.
+          if (i > 0 && (trimWidth * trimHeight) < (width * height * 0.05)) {
+             console.log(`   ⚠️ Item ${i + 1} is tiny noise (${trimWidth}x${trimHeight}), skipping to prevent false positive.`);
+             continue;
+          }
+
+          let clothingBuffer = await sharp(trimmedData.data, { raw: { width: trimWidth, height: trimHeight, channels: 4 } })
+            .extend({ top: 80, bottom: 80, left: 80, right: 80, background: { r: 245, g: 245, b: 245, alpha: 1 } })
+            .flatten({ background: { r: 245, g: 245, b: 245 } })
+            .png().toBuffer();
+
+          if (clothingBuffer.length < 500) {
+             console.log(`   ⚠️ Item ${i + 1} extraction failed (too small), skipping.`);
+             continue;
+          }
+
+          // 2. Smart Routing Controller (Vision AI decides if Generative Ironing is needed)
+          console.log(`   🧠 Item ${i + 1}: Analyzing posture & wrinkles...`);
+          let needsGeneration = true; // Default to true (assume it needs ironing)
+          const NVIDIA_KEY = process.env.EXPO_PUBLIC_NVIDIA_API_KEY;
+          const base64Img = `data:image/png;base64,${clothingBuffer.toString('base64')}`;
+
+          try {
+            const checkRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${NVIDIA_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'meta/llama-3.2-90b-vision-instruct',
+                messages: [{ role: 'user', content: [
+                  { type: 'text', text: 'Analyze this clothing item. Is it laid out relatively straight and flat (like a good product photo), or is it heavily wrinkled, crumpled, folded, or tilted? Reply with ONLY the word "STRAIGHT" if it is flat and good enough, or "CRUMPLED" if it needs to be artificially straightened.' },
+                  { type: 'image_url', image_url: { url: base64Img } }
+                ]}],
+                temperature: 0.1, max_tokens: 10,
+              })
+            });
+            
+            if (checkRes.ok) {
+               const checkData = await checkRes.json();
+               const answer = checkData.choices[0].message.content.trim().toUpperCase();
+               console.log(`   ⚖️ Controller Decision: ${answer}`);
+               if (answer.includes('STRAIGHT')) {
+                  needsGeneration = false;
+               }
+            }
+          } catch (e) {
+             console.log(`   ⚠️ Controller failed, defaulting to Generative.`);
+          }
+
+          if (!needsGeneration) {
+             console.log(`   ✨ Item ${i + 1}: Good posture detected. Using 100% Original Pixels (Local Polish)...`);
+             try {
+                const sharpModule = await import('sharp');
+                const sharp = sharpModule.default;
+                clothingBuffer = await sharp(clothingBuffer)
+                  .sharpen({ sigma: 0.5, m1: 0.2, m2: 0.2, x1: 2, y2: 10, y3: 20 })
+                  .toBuffer();
+             } catch(err) {
+                console.log(`   ⚠️ Local Polish failed, using original buffer.`);
+             }
+          } else {
+            console.log(`   ✨ Item ${i + 1}: Needs ironing. Proceeding to Generative Flat-Lay...`);
+            try {
+              const visionRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${NVIDIA_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: 'meta/llama-3.2-90b-vision-instruct',
+                  messages: [{ role: 'user', content: [
+                    { type: 'text', text: 'Act as a Master Fashion Replica AI. Analyze this clothing item and describe it with MICRO-PRECISION so an image generator can recreate it 1:1. Describe the exact base color, fabric texture, and silhouette. Critically detail EVERY pattern, graphic, text, or logo, including their EXACT placement, scale, colors, and spacing (e.g., "small black bamboo leaves on the lower left", "thick white stripes on collar"). Mention pockets, buttons, or stitching depth. Ignore ALL background noise. Max 100 words.' },
+                    { type: 'image_url', image_url: { url: base64Img } }
+                  ]}],
+                  temperature: 0.1, max_tokens: 250,
+                })
+              });
+              
+              if (visionRes.ok) {
+                const visionData = await visionRes.json();
+                const description = visionData.choices[0].message.content.trim();
+                console.log(`   📝 Target Design (NVIDIA): ${description}`);
+                
+                const prompt = `${description}, perfect 1:1 replica, single isolated clothing item, perfectly straight, professionally ironed flat-lay e-commerce product photo, studio lighting, pristine solid white background, high end fashion photography, photorealistic 8k, ultra-detailed textures, no extra objects, clean edges`;
+                
+                const fluxRes = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ inputs: prompt })
+                });
+
+                if (fluxRes.ok) {
+                  const generatedBuf = Buffer.from(await fluxRes.arrayBuffer());
+                  if (generatedBuf.length > 1000) clothingBuffer = generatedBuf;
+                }
+              }
+            } catch (genErr) {
+              console.log(`   ⚠️ Item ${i + 1}: Generative failed, using original.`);
+            }
+          }
+
+          // 3. Upload & Tag
+          console.log(`   ☁️ Uploading Item ${i + 1}...`);
+          const finalUrl: string = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload(`data:image/png;base64,${clothingBuffer.toString('base64')}`, 
+              { folder: 'atla_closet', transformation: [{ quality: 'auto', fetch_format: 'auto' }] }, 
+              (err, result) => { if (err || !result) reject(err); else resolve(result.secure_url); }
+            );
+          });
+
+          console.log(`   🏷️ Tagging Item ${i + 1}...`);
+          const tags = await aiTagGarment(finalUrl);
+          
+          extractedItems.push({ url: finalUrl, tags });
+        }
+
+        if (extractedItems.length === 0) throw new Error('Failed to process any items from the image');
+
+        console.log('\n   ═══ PIPELINE COMPLETE ═══\n');
+        return res.json({ success: true, items: extractedItems });
+
+      } catch (segErr: any) {
+        console.log(`   ⚠️ Attempt ${attempt} failed: ${segErr.message}`);
+        if (attempt === MAX_RETRIES) throw new Error(`Extraction failed: ${segErr.message}`);
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+  } catch (error: any) {
+    console.error('❌ Extraction Pipeline Error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── Legacy flat-lay endpoint (redirects to extract) ──
+app.post('/api/clothes/flatlay', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image uploaded' });
+    }
+
+    // Upload raw to Cloudinary and return URL (simple fallback)
+    const url: string = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'atla_closet' },
+        (error, result) => {
+          if (error || !result) return reject(new Error('Upload failed'));
+          resolve(result.secure_url);
+        }
+      );
+      Readable.from((req as any).file.buffer).pipe(stream);
+    });
+
+    res.json({ success: true, url });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ── Add New Clothing Item ──
 app.post('/api/clothes', async (req, res) => {
   try {
@@ -522,159 +918,225 @@ app.put('/api/user/:id/onboarding', async (req, res) => {
   }
 });
 
-// AI Virtual Try-On Endpoint — Vertex AI Imagen 2 Pipeline
-// Step 1: Garment image → NVIDIA phi-4-multimodal → detailed text description
-// Step 2: User photo + garment description → Vertex AI Imagen 2 (image editing) → result
+// AI Virtual Try-On Endpoint — Hugging Face IDM-VTON Pipeline (FREE)
 app.post('/api/try-on', async (req, res) => {
   const { garm_img, human_img, description } = req.body;
+  
+  const tokens = [];
+  if (process.env.HF_TOKEN) tokens.push(process.env.HF_TOKEN);
+  if (process.env.HF_TOKEN_2) tokens.push(process.env.HF_TOKEN_2);
+  if (process.env.HF_TOKEN_3) tokens.push(process.env.HF_TOKEN_3);
 
-  const NVIDIA_KEY = process.env.NVIDIA_API_KEY || process.env.EXPO_PUBLIC_NVIDIA_API_KEY;
-  const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID;
-  const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-  const VERTEX_KEY_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON;
-
-  if (!VERTEX_PROJECT || !VERTEX_KEY_JSON) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Vertex AI not configured. Need VERTEX_PROJECT_ID and VERTEX_SERVICE_ACCOUNT_JSON in .env' 
-    });
+  if (tokens.length === 0) {
+    return res.status(400).json({ success: false, error: 'Hugging Face Token not configured. Add HF_TOKEN in .env' });
   }
-
   if (!garm_img || !human_img) {
     return res.status(400).json({ success: false, error: 'garm_img and human_img are required' });
   }
 
   try {
-    console.log('🚀 Vertex AI Imagen 2 Try-On Pipeline Starting...');
+    console.log('🚀 Hugging Face IDM-VTON Try-On Pipeline Starting...');
+    const { Client } = await import('@gradio/client');
 
-    // ── Step 1: Describe garment using NVIDIA phi-4-multimodal ──
-    let garmentDescription = description || 'stylish clothing item';
+    // Step 1: Fetch images and convert to Blobs
+    console.log('📥 Fetching input images...');
+    const humanRes = await fetch(human_img);
+    const humanBlob = await humanRes.blob();
 
-    if (NVIDIA_KEY) {
+    const garmRes = await fetch(garm_img);
+    const garmBlob = await garmRes.blob();
+
+    let result = null;
+    let lastError = null;
+    let success = false;
+
+    // Step 2: Try-On Fallback System Loop
+    for (let i = 0; i < tokens.length; i++) {
       try {
-        console.log('👁️  Step 1: Describing garment with NVIDIA phi-4-multimodal...');
-        const visionRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NVIDIA_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'microsoft/phi-4-multimodal-instruct',
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'image_url', image_url: { url: garm_img } },
-                { type: 'text', text: 'Describe this clothing item in detail for a fashion AI. Include: garment type, color, fabric texture, fit style, notable design details. Be specific. Max 2 sentences.' }
-              ]
-            }],
-            max_tokens: 150,
-            temperature: 0.3,
-          }),
-        });
-
-        if (visionRes.ok) {
-          const visionData = (await visionRes.json()) as any;
-          const desc = visionData.choices?.[0]?.message?.content?.trim();
-          if (desc) {
-            garmentDescription = desc;
-            console.log('✅ Garment described:', garmentDescription);
-          }
+        let isBottom = false;
+        const lowerDesc = (description || '').toLowerCase();
+        if (lowerDesc.match(/pant|jean|short|skirt|bottom|trouser|legging/)) {
+          isBottom = true;
         }
-      } catch (visionErr: any) {
-        console.warn('⚠️ NVIDIA VLM failed, using fallback description:', visionErr.message);
+
+        if (isBottom) {
+          console.log(`🔑 [Token ${i + 1}/${tokens.length}] Bottom garment detected. Routing to levihsu/OOTDiffusion...`);
+          const client = await Client.connect("levihsu/OOTDiffusion", { hf_token: tokens[i] });
+          
+          console.log(`🎨 Generating Lower-Body Try-On...`);
+          // OOTDiffusion typically takes vton_img, garm_img, category, n_samples, n_steps, image_scale, seed
+          result = await client.predict("/process_dc", {
+            vton_img: humanBlob,
+            garm_img: garmBlob,
+            category: "Lower-body",
+            n_samples: 1,
+            n_steps: 20,
+            image_scale: 2,
+            seed: -1,
+          }) as any;
+        } else {
+          console.log(`🔑 [Token ${i + 1}/${tokens.length}] Top garment detected. Routing to yisol/IDM-VTON...`);
+          const client = await Client.connect("yisol/IDM-VTON", { hf_token: tokens[i] });
+
+          console.log(`🎨 Generating Upper-Body Try-On...`);
+          const dictObj = { background: humanBlob, layers: [], composite: null };
+
+          result = await client.predict("/tryon", {
+            dict: dictObj,
+            garm_img: garmBlob,
+            garment_des: description || "clothing item",
+            is_checked: true,
+            is_checked_crop: false,
+            denoise_steps: 30,
+            seed: 42,
+          }) as any;
+        }
+
+        success = true;
+        break; // Exit loop if successful
+      } catch (err: any) {
+        console.warn(`⚠️ Token ${i + 1} failed: ${err.message}`);
+        lastError = err;
       }
     }
 
-    // ── Step 2: Get access token for Vertex AI ──
-    console.log('🔑 Step 2: Authenticating with Vertex AI...');
-    
-    const { GoogleAuth } = await import('google-auth-library');
-    
-    // Parse service account JSON (stored as base64 or raw JSON string)
-    let serviceAccountKey;
-    try {
-      const decoded = Buffer.from(VERTEX_KEY_JSON, 'base64').toString('utf8');
-      serviceAccountKey = JSON.parse(decoded);
-    } catch {
-      serviceAccountKey = JSON.parse(VERTEX_KEY_JSON);
+    if (!success) {
+      console.log('⚠️ All Hugging Face tokens failed/exhausted. 🔄 Switching to Replicate Fallback API...');
+      
+      if (!process.env.REPLICATE_API_TOKEN) {
+         throw new Error("Hugging Face exhausted and no Replicate Fallback Token found.");
+      }
+
+      const Replicate = require('replicate');
+      const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+      
+      let isBottom = false;
+      const lowerDesc = (description || '').toLowerCase();
+      if (lowerDesc.match(/pant|jean|short|skirt|bottom|trouser|legging/)) {
+        isBottom = true;
+      }
+
+      try {
+        const output = await replicate.run(
+          "cuuupid/idm-vton:c871bb9b046607b680449ecbae55fd8c6d945e0a1948644bf2361b3d021d3ff4",
+          {
+            input: {
+              crop: false,
+              seed: 42,
+              steps: 30,
+              category: isBottom ? "lower_body" : "upper_body",
+              garm_img: garm_img,
+              human_img: human_img,
+              garment_des: description || "clothing item"
+            }
+          }
+        );
+
+        if (!output) throw new Error("Replicate API returned empty output");
+        result = output;
+        success = true;
+        console.log('✅ Replicate Fallback Successful!');
+      } catch (repErr: any) {
+        throw new Error(`Both HuggingFace and Replicate failed. Last Error: ${repErr.message}`);
+      }
     }
 
-    const auth = new GoogleAuth({
-      credentials: serviceAccountKey,
-      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    console.log('✅ Generation Complete! Processing result...');
+    let generatedImageUrl = ''; 
+    if (result && result.data && Array.isArray(result.data) && result.data[0] && result.data[0].url) {
+      generatedImageUrl = result.data[0].url;
+    } else if (Array.isArray(result) && result[0] && result[0].url) {
+      generatedImageUrl = result[0].url;
+    } else if (result && result.url) {
+      generatedImageUrl = result.url;
+    } else if (typeof result === 'string') {
+      generatedImageUrl = result;
+    }
+
+    if (!generatedImageUrl) {
+      throw new Error("Invalid output format from Hugging Face Space");
+    }
+
+    console.log('📤 Uploading result to Cloudinary...');
+    const imgRes = await fetch(generatedImageUrl);
+    const imageBuffer = Buffer.from(await imgRes.arrayBuffer());
+    const dataUri = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+
+    const uploadResult = await new Promise<string>((resolve, reject) => {
+      cloudinary.uploader.upload(dataUri, { folder: 'atla_tryon', transformation: [{ quality: 'auto', fetch_format: 'auto' }] }, (err, result) => {
+        if (err) reject(err);
+        else resolve(result?.secure_url || '');
+      });
     });
 
-    const accessToken = await auth.getAccessToken();
-    console.log('✅ Vertex AI authenticated');
+    console.log('🎉 Try-On Pipeline Complete:', uploadResult);
+    res.json({ success: true, url: uploadResult });
+  } catch (error: any) {
+    console.error('❌ Hugging Face Try-On Pipeline Failed:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
-    // ── Step 3: Download user image and convert to base64 ──
-    console.log('📥 Step 3: Fetching user image...');
-    const humanImgRes = await fetch(human_img);
-    const humanImgBuffer = await humanImgRes.arrayBuffer();
-    const humanImgBase64 = Buffer.from(humanImgBuffer).toString('base64');
-    const humanImgMime = humanImgRes.headers.get('content-type') || 'image/jpeg';
+// AI Avatar Generation Endpoint (Hugging Face Free Tier)
+app.post('/api/generate-avatar', async (req, res) => {
+  const { gender } = req.body;
+  const tokens = [];
+  if (process.env.HF_TOKEN) tokens.push(process.env.HF_TOKEN);
+  if (process.env.HF_TOKEN_2) tokens.push(process.env.HF_TOKEN_2);
+  if (process.env.HF_TOKEN_3) tokens.push(process.env.HF_TOKEN_3);
 
-    // ── Step 4: Call Vertex AI Imagen 2 edit endpoint ──
-    console.log('🎨 Step 4: Calling Vertex AI Imagen 2 image editing...');
+  if (tokens.length === 0) {
+    return res.status(400).json({ success: false, error: 'Hugging Face Token missing.' });
+  }
 
-    // Advanced prompt for better VTO results
-    const editPrompt = `Photorealistic fashion photography. A person wearing ${garmentDescription}. The person, their face, body proportions, pose, and the background must remain identical to the original photo. Only the clothing should be replaced with the described garment. High resolution, 8k, professional lighting.`;
-
-    const vertexEndpoint = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/imagegeneration@006:predict`;
-
-    const vertexPayload = {
-      instances: [{
-        prompt: editPrompt,
-        image: {
-          bytesBase64Encoded: humanImgBase64,
-          mimeType: humanImgMime,
-        },
-      }],
-      parameters: {
-        sampleCount: 1,
-        // We use EDIT_MODE_INPAINT_INSERTION but without a mask, Imagen 2 tries to identify the subject.
-        // For better results, it's recommended to provide a mask, but we'll try instruction-based editing.
-        editConfig: {
-          editMode: 'EDIT_MODE_DEFAULT', // Changed to DEFAULT for instruction-based editing without a mask
-        },
-        outputOptions: {
-          mimeType: 'image/jpeg',
-          compressionQuality: 95,
-        },
-      },
-    };
-
-    const vertexRes = await fetch(vertexEndpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(vertexPayload),
-    });
-
-    if (!vertexRes.ok) {
-      const errText = await vertexRes.text();
-      console.error('❌ Vertex AI error:', errText);
-      throw new Error(`Vertex AI error ${vertexRes.status}: ${errText}`);
-    }
-
-    const vertexData = (await vertexRes.json()) as any;
-    const resultBase64 = vertexData.predictions?.[0]?.bytesBase64Encoded;
-
-    if (!resultBase64) {
-      console.error('❌ No image in Vertex response:', JSON.stringify(vertexData).substring(0, 500));
-      throw new Error('No image returned from Vertex AI Imagen 2. The prompt might have been blocked or the image couldn\'t be processed.');
-    }
-
-    // ── Step 5: Upload result to Cloudinary ──
-    console.log('📤 Step 5: Uploading result to Cloudinary...');
-    const dataUri = `data:image/jpeg;base64,${resultBase64}`;
+  try {
+    const prompt = `Full body fashion photography, realistic ${gender || 'female'} model standing straight against a plain white studio background, wearing a simple fitted white t-shirt and grey leggings, photorealistic, 4k, natural lighting, looking directly at camera, neutral expression, hands at sides.`;
     
+    console.log('🎨 Generating AI Avatar with Hugging Face FLUX...');
+    
+    let response = null;
+    let success = false;
+    let lastError = null;
+
+    for (let i = 0; i < tokens.length; i++) {
+      try {
+        console.log(`🔑 [Token ${i + 1}/${tokens.length}] Sending inference request...`);
+        response = await fetch(
+          "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+          {
+            headers: {
+              Authorization: `Bearer ${tokens[i]}`,
+              "Content-Type": "application/json",
+            },
+            method: "POST",
+            body: JSON.stringify({ inputs: prompt }),
+          }
+        );
+
+        if (!response.ok) {
+          const err = await response.text();
+          throw new Error(err);
+        }
+        
+        success = true;
+        break;
+      } catch (err: any) {
+        console.warn(`⚠️ Token ${i + 1} failed: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    if (!success || !response) {
+      throw lastError || new Error("All Hugging Face tokens failed.");
+    }
+
+    console.log('📤 Uploading generated avatar to Cloudinary...');
+    const imageBuffer = Buffer.from(await response.arrayBuffer());
+    const dataUri = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+
     const uploadResult = await new Promise<string>((resolve, reject) => {
       cloudinary.uploader.upload(dataUri, { 
-        folder: 'atla_tryon',
+        folder: 'atla_avatars',
         transformation: [{ quality: 'auto', fetch_format: 'auto' }]
       }, (err, result) => {
         if (err) reject(err);
@@ -682,11 +1144,9 @@ app.post('/api/try-on', async (req, res) => {
       });
     });
 
-    console.log('✅ Try-On Complete:', uploadResult);
     res.json({ success: true, url: uploadResult });
-
   } catch (error: any) {
-    console.error('❌ Vertex AI Try-On Pipeline Failed:', error.message);
+    console.error('❌ AI Avatar Generation Failed:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

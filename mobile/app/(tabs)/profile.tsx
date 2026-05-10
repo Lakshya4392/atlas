@@ -69,7 +69,6 @@ export default function ProfileScreen() {
         const res = await fetch(`${BACKEND_URL}/api/upload`, {
           method: 'POST',
           body: formData,
-          headers: { 'Content-Type': 'multipart/form-data' },
         });
         const data = await res.json();
         
@@ -91,6 +90,39 @@ export default function ProfileScreen() {
       } finally {
         setUploading(false);
       }
+    }
+  };
+
+  const handleGenerateAvatar = async () => {
+    setUploading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/generate-avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gender: 'fashion model' })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        const updateRes = await fetch(`${BACKEND_URL}/api/user/${user.id}/avatar`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ avatarUrl: data.url }),
+        });
+        const updateData = await updateRes.json();
+        if (updateData.success) {
+          const newUser = { ...user, avatar: data.url };
+          await AsyncStorage.setItem('user', JSON.stringify(newUser));
+          setUser(newUser);
+        }
+      } else {
+        alert('Failed to generate avatar: ' + data.error);
+      }
+    } catch (e) {
+      console.error('Avatar generation error:', e);
+      alert('Network error while generating avatar.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -141,14 +173,23 @@ export default function ProfileScreen() {
         <View style={styles.aiCard}>
           <View style={styles.aiCardLeft}>
             <Text style={styles.aiCardTitle}>Digital Try-On Avatar</Text>
-            <Text style={styles.aiCardSub}>Upload a photo to see how AI outfits look on your actual body.</Text>
-            <TouchableOpacity style={styles.aiUploadBtn} onPress={handleUpdateAvatar} disabled={uploading}>
-              {uploading ? (
-                <ActivityIndicator color="#000" size="small" />
-              ) : (
-                <Text style={styles.aiUploadBtnText}>{user?.avatar ? 'UPDATE PHOTO' : 'SETUP AVATAR'}</Text>
-              )}
-            </TouchableOpacity>
+            <Text style={styles.aiCardSub}>Upload a photo or generate an AI model to try on outfits.</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity style={[styles.aiUploadBtn, { flex: 1, marginTop: 0 }]} onPress={handleUpdateAvatar} disabled={uploading}>
+                {uploading ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <Text style={styles.aiUploadBtnText}>{user?.avatar ? 'UPDATE' : 'UPLOAD'}</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.aiUploadBtn, { flex: 1, marginTop: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#000' }]} onPress={handleGenerateAvatar} disabled={uploading}>
+                {uploading ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <Text style={[styles.aiUploadBtnText, { color: '#000' }]}>GENERATE</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.aiCardRight}>
             {user?.avatar ? (

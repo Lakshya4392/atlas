@@ -11,15 +11,16 @@ export default function TabsLayout() {
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
         tabBarActiveTintColor: '#000',
-        tabBarInactiveTintColor: '#AAA',
+        tabBarInactiveTintColor: '#999',
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <View style={styles.brandTab}>
-              <Text style={[styles.brandTabText, focused && styles.brandTabTextActive]}>AD</Text>
+          tabBarIcon: ({ focused, color }) => (
+            <View style={styles.iconWrapper}>
+              <Ionicons name={focused ? 'grid' : 'grid-outline'} size={24} color={color} />
+              {focused && <View style={styles.activeDot} />}
             </View>
           ),
         }}
@@ -29,11 +30,10 @@ export default function TabsLayout() {
         name="closet"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons
-              name={focused ? 'shirt' : 'shirt-outline'}
-              size={22}
-              color={color}
-            />
+            <View style={styles.iconWrapper}>
+              <Ionicons name={focused ? 'shirt' : 'shirt-outline'} size={24} color={color} />
+              {focused && <View style={styles.activeDot} />}
+            </View>
           ),
         }}
       />
@@ -41,10 +41,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="ai-stylist"
         options={{
-          tabBarStyle: { display: 'none' },
+          tabBarStyle: { display: 'none' }, // Hide tab bar on AI chat screen
           tabBarIcon: ({ focused }) => (
             <View style={[styles.centerIcon, focused && styles.centerIconActive]}>
-              <Ionicons name="sparkles" size={20} color={focused ? '#fff' : '#999'} />
+              <Ionicons name="sparkles" size={24} color="#FFF" />
             </View>
           ),
         }}
@@ -54,11 +54,10 @@ export default function TabsLayout() {
         name="outfits"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons
-              name={focused ? 'layers' : 'layers-outline'}
-              size={22}
-              color={color}
-            />
+            <View style={styles.iconWrapper}>
+              <Ionicons name={focused ? 'layers' : 'layers-outline'} size={24} color={color} />
+              {focused && <View style={styles.activeDot} />}
+            </View>
           ),
         }}
       />
@@ -67,11 +66,10 @@ export default function TabsLayout() {
         name="profile"
         options={{
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons
-              name={focused ? 'person' : 'person-outline'}
-              size={22}
-              color={color}
-            />
+            <View style={styles.iconWrapper}>
+              <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+              {focused && <View style={styles.activeDot} />}
+            </View>
           ),
         }}
       />
@@ -82,39 +80,46 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderTopWidth: 0,
     height: Platform.OS === 'ios' ? 90 : 70,
     paddingBottom: Platform.OS === 'ios' ? 30 : 10,
     paddingTop: 10,
-    ...Shadows.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  brandTab: {
-    paddingHorizontal: 4,
-  },
-  brandTabText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#AAA',
-    letterSpacing: 2,
-  },
-  brandTabTextActive: {
-    color: '#000',
-  },
-  centerIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F5F5F5',
+  iconWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-    marginBottom: 4,
+    height: 40,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#000',
+    position: 'absolute',
+    bottom: -8,
+  },
+  centerIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Platform.OS === 'ios' ? 20 : 30, // Elevated floating effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 4,
+    borderColor: '#FFF', // Creates a cutout effect against the tab bar
   },
   centerIconActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
-    ...Shadows.md,
+    transform: [{ scale: 1.05 }],
   },
 });

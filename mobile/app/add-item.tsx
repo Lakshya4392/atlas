@@ -1,149 +1,133 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Platform, Animated, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '../constants/theme';
-import { CATEGORIES } from '../constants/data';
 
-const EMOJIS = ['👕', '👖', '🧥', '👗', '👔', '🧶', '👟', '🥾', '👠', '👜', '⌚', '🕶️', '🧣', '🎩', '👒'];
-const COLORS = [
-  { name: 'Black', hex: '#1A1A1A' },
-  { name: 'White', hex: '#F5F4F0' },
-  { name: 'Navy', hex: '#1E3A5F' },
-  { name: 'Indigo', hex: '#312E81' },
-  { name: 'Camel', hex: '#D4A574' },
-  { name: 'Olive', hex: '#65A30D' },
-  { name: 'Red', hex: '#DC2626' },
-  { name: 'Pink', hex: '#EC4899' },
-  { name: 'Sky Blue', hex: '#7DD3FC' },
-  { name: 'Emerald', hex: '#059669' },
-  { name: 'Tan', hex: '#9B8B6E' },
-  { name: 'Brown', hex: '#92400E' },
-];
+const getBackendUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:3000`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
 
 export default function AddItemScreen() {
-  const [name, setName] = useState('');
-  const [brand, setBrand] = useState('');
-  const [cat, setCat] = useState('tops');
-  const [emoji, setEmoji] = useState('👕');
-  const [color, setColor] = useState(COLORS[0]);
-  const [tags, setTags] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+  const [step, setStep] = useState<'IDLE' | 'ANALYZING' | 'DONE'>('IDLE');
+  const [extractedItems, setExtractedItems] = useState<{url: string, tags: any}[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-
-  // Dynamically resolve the backend URL
-  const getBackendUrl = () => {
-    const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.hostUri;
-    if (hostUri) {
-      const ip = hostUri.split(':')[0];
-      return `http://${ip}:3000`;
-    }
-    return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
-  };
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const BACKEND_URL = getBackendUrl();
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 5],
-      quality: 0.8,
-    });
+  useEffect(() => {
+    if (step === 'IDLE') {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.1, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+    }
+  }, [step]);
+
+  const handlePickImage = async (useCamera = false) => {
+    let result;
+    if (useCamera) {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Denied', 'Camera access is required.');
+        return;
+      }
+      result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 5], quality: 0.8 });
+    } else {
+      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 5], quality: 0.8 });
+    }
 
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      startAiAnalysis(result.assets[0].uri);
     }
   };
 
-  const takePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission Denied', 'Camera access is required to take photos.');
-      return;
-    }
+  const startAiAnalysis = async (localUri: string) => {
+    setStep('ANALYZING');
+    try {
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUserId = storedUser ? JSON.parse(storedUser).id : 'anonymous';
 
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 5],
-      quality: 0.8,
-    });
+      const formData = new FormData();
+      formData.append('image', {
+        uri: localUri,
+        name: 'messy_photo.jpg',
+        type: 'image/jpeg',
+      } as any);
+      formData.append('userId', currentUserId);
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      const res = await fetch(`${BACKEND_URL}/api/clothes/extract`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      // Handle rate limiting
+      if (res.status === 429) {
+        Alert.alert('⏳ Rate Limited', data.error || 'Please wait before trying again.');
+        setStep('IDLE');
+        return;
+      }
+
+      if (!data.success) throw new Error(data.error);
+
+      setExtractedItems(data.items || []);
+      setCurrentIndex(0);
+      setStep('DONE');
+    } catch (error: any) {
+      Alert.alert('AI Error', 'Extraction failed: ' + error.message);
+      setStep('IDLE');
     }
   };
 
-  const save = async () => {
-    if (!name.trim()) {
-      Alert.alert('Missing Info', 'Please enter an item name.');
-      return;
-    }
-
-    if (!image) {
-      Alert.alert('Missing Photo', 'Please add a photo of your item.');
-      return;
-    }
-
+  const handleSave = async () => {
+    if (extractedItems.length === 0) return;
     setLoading(true);
 
     try {
-      // 1. Upload to Cloudinary via our backend
-      const formData = new FormData();
-      formData.append('image', {
-        uri: image,
-        name: 'upload.jpg',
-        type: 'image/jpeg',
-      } as any);
-
-      const uploadRes = await fetch(`${BACKEND_URL}/api/upload`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success) throw new Error(uploadData.error);
-
-      const imageUrl = uploadData.url;
-
-      // 2. Save to database
       const storedUser = await AsyncStorage.getItem('user');
       const userId = storedUser ? JSON.parse(storedUser).id : null;
       if (!userId) throw new Error('Not logged in');
 
-      const saveRes = await fetch(`${BACKEND_URL}/api/clothes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          name,
-          category: cat,
-          color: color.name,
-          brand,
-          imageUrl,
-          tags: tags.split(',').map(t => t.trim()).filter(t => t),
-        }),
-      });
+      for (const item of extractedItems) {
+        const saveRes = await fetch(`${BACKEND_URL}/api/clothes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            name: item.tags.name,
+            category: item.tags.category,
+            color: item.tags.color,
+            brand: item.tags.brand,
+            imageUrl: item.url,
+            tags: ['ai-extracted'],
+          }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveData.success) throw new Error(saveData.error);
+      }
 
-      const saveData = await saveRes.json();
-      if (!saveData.success) throw new Error(saveData.error);
-
-      Alert.alert(
-        'Added ✓',
-        `${name} added to your cloud closet.`,
-        [{ text: 'Done', onPress: () => router.back() }]
-      );
+      Alert.alert('Added ✓', `Saved ${extractedItems.length} item(s) to your closet!`, [
+        { text: 'Done', onPress: () => router.back() }
+      ]);
     } catch (error: any) {
-      console.error('Save error:', error);
-      Alert.alert('Error', error.message || 'Something went wrong while saving.');
+      Alert.alert('Error', error.message || 'Something went wrong.');
     } finally {
       setLoading(false);
     }
@@ -151,351 +135,324 @@ export default function AddItemScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()} activeOpacity={0.7} disabled={loading || step === 'ANALYZING'}>
           <Ionicons name="close" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>ADD NEW ITEM</Text>
-        <TouchableOpacity style={styles.saveBtn} onPress={save} activeOpacity={0.7} disabled={loading}>
-          <Text style={styles.saveBtnText}>SAVE</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>AI SCANNER</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        {/* ── Photo upload area ── */}
-        <TouchableOpacity style={styles.photoArea} activeOpacity={0.7} onPress={pickImage}>
-          <LinearGradient
-            colors={['#F9F8F6', '#F0EDE6']}
-            style={styles.photoGradient}
-          />
-          {image ? (
-            <Image source={{ uri: image }} style={styles.fullImage} />
-          ) : (
-            <>
-              <Text style={styles.photoEmoji}>{emoji}</Text>
-              <Text style={styles.photoLabel}>TAP TO ADD PHOTO</Text>
-            </>
-          )}
-          <View style={styles.cameraRow}>
-            <TouchableOpacity onPress={takePhoto} style={styles.cameraBtn}>
-              <Ionicons name="camera-outline" size={20} color={Colors.textSecondary} />
-              <Text style={styles.cameraText}>Take Photo</Text>
+      <View style={styles.content}>
+        {step === 'IDLE' && (
+          <View style={styles.idleState}>
+            <Text style={styles.idleTitle}>Digitize Your Wardrobe</Text>
+            <Text style={styles.idleSub}>Our AI will automatically remove the background and extract the brand, category, and color.</Text>
+            
+            <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]}>
+              <TouchableOpacity style={styles.mainBtn} onPress={() => handlePickImage(true)} activeOpacity={0.9}>
+                <Ionicons name="camera" size={40} color="#FFF" />
+              </TouchableOpacity>
+            </Animated.View>
+
+            <TouchableOpacity style={styles.galleryBtn} onPress={() => handlePickImage(false)}>
+              <Ionicons name="image-outline" size={20} color="#000" />
+              <Text style={styles.galleryText}>Upload from Gallery</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        )}
 
-        {/* ── Icon picker ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>CHOOSE ICON</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiScroll}>
-            {EMOJIS.map(e => (
-              <TouchableOpacity
-                key={e}
-                style={[styles.emojiBtn, emoji === e && styles.emojiBtnActive]}
-                onPress={() => setEmoji(e)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.emojiText}>{e}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ── Item name ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>ITEM NAME <Text style={styles.required}>*</Text></Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Classic White Tee"
-            placeholderTextColor={Colors.textMuted}
-            value={name}
-            onChangeText={setName}
-            autoFocus
-          />
-        </View>
-
-        {/* ── Brand ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>BRAND (OPTIONAL)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Uniqlo, Zara, Nike"
-            placeholderTextColor={Colors.textMuted}
-            value={brand}
-            onChangeText={setBrand}
-          />
-        </View>
-
-        {/* ── Category ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>CATEGORY</Text>
-          <View style={styles.catGrid}>
-            {CATEGORIES.filter(c => c.id !== 'all').map(c => (
-              <TouchableOpacity
-                key={c.id}
-                style={[styles.catBtn, cat === c.id && styles.catBtnActive]}
-                onPress={() => setCat(c.id)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={c.icon as any}
-                  size={15}
-                  color={cat === c.id ? '#fff' : Colors.textSecondary}
-                />
-                <Text style={[styles.catText, cat === c.id && styles.catTextActive]}>
-                  {c.name.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {step === 'ANALYZING' && (
+          <View style={styles.analyzingState}>
+            <View style={styles.imageWrapper}>
+              <View style={[styles.previewImage, { backgroundColor: '#E0E0E0' }]} />
+              <View style={styles.scannerOverlay}>
+                <ActivityIndicator size="large" color="#FFF" />
+                <Text style={styles.scanningText}>Extracting outfits...</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 4 }}>Analyzing multiple items</Text>
+              </View>
+            </View>
           </View>
-        </View>
+        )}
 
-        {/* ── Color ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>COLOR</Text>
-          <View style={styles.colorGrid}>
-            {COLORS.map(c => (
-              <TouchableOpacity
-                key={c.name}
-                style={[
-                  styles.colorBtn,
-                  { backgroundColor: c.hex },
-                  color.name === c.name && styles.colorBtnActive,
-                ]}
-                onPress={() => setColor(c)}
-                activeOpacity={0.7}
-              >
-                {color.name === c.name && (
-                  <Ionicons
-                    name="checkmark"
-                    size={12}
-                    color={c.hex === '#F5F4F0' ? '#000' : '#fff'}
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
+        {step === 'DONE' && extractedItems.length > 0 && (
+          <View style={styles.doneState}>
+            {extractedItems.length > 1 && (
+              <Text style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: 10, color: Colors.primary }}>
+                {extractedItems.length} ITEMS DETECTED (Swipe to view)
+              </Text>
+            )}
+            
+            <Animated.ScrollView 
+              horizontal 
+              pagingEnabled 
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => {
+                const newIndex = Math.round(e.nativeEvent.contentOffset.x / e.nativeEvent.layoutMeasurement.width);
+                setCurrentIndex(newIndex);
+              }}
+              style={{ flexGrow: 0 }}
+            >
+              {extractedItems.map((item, idx) => (
+                <View key={idx} style={{ width: 340, alignItems: 'center' }}>
+                  <View style={styles.imageWrapper}>
+                    <Image source={{ uri: item.url }} style={styles.previewImage} />
+                    <View style={styles.aiBadge}>
+                      <Ionicons name="sparkles" size={14} color="#FFF" />
+                      <Text style={styles.aiBadgeText}>AI EXTRACTED</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.extractedInfo}>
+                    <Text style={styles.successTitle}>{item.tags.name}</Text>
+                    <View style={styles.tagsGrid}>
+                      <View style={styles.tag}>
+                        <Text style={styles.tagLabel}>CATEGORY</Text>
+                        <Text style={styles.tagValue}>{item.tags.category.toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.tag}>
+                        <Text style={styles.tagLabel}>COLOR</Text>
+                        <Text style={styles.tagValue}>{item.tags.color.toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.tag}>
+                        <Text style={styles.tagLabel}>BRAND</Text>
+                        <Text style={styles.tagValue}>{item.tags.brand.toUpperCase()}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </Animated.ScrollView>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginVertical: 10 }}>
+              {extractedItems.map((_, idx) => (
+                <View key={idx} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: idx === currentIndex ? Colors.primary : '#ccc', marginHorizontal: 4 }} />
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveMainBtn} onPress={handleSave} activeOpacity={0.85} disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                  <Text style={styles.saveMainBtnText}>SAVE {extractedItems.length > 1 ? 'ALL ITEMS' : 'TO CLOSET'}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            {!loading && (
+               <TouchableOpacity style={styles.retakeBtn} onPress={() => setStep('IDLE')}>
+                 <Text style={styles.retakeText}>RETAKE PHOTO</Text>
+               </TouchableOpacity>
+            )}
           </View>
-        </View>
-
-        {/* ── Tags ── */}
-        <View style={styles.section}>
-          <Text style={styles.label}>TAGS</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="casual, summer, basic, minimal"
-            placeholderTextColor={Colors.textMuted}
-            value={tags}
-            onChangeText={setTags}
-            multiline
-            numberOfLines={2}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.saveMainBtn} onPress={save} activeOpacity={0.85} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark" size={20} color="#fff" />
-              <Text style={styles.saveMainBtnText}>ADD TO CLOSET</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   cancelBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
   headerTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.black,
-    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#000',
     letterSpacing: 2,
   },
-  saveBtn: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
   },
-  saveBtnText: {
-    fontSize: FontSize.sm,
-    color: Colors.accent,
-    fontWeight: FontWeight.black,
-    letterSpacing: 1,
-  },
-
-  scroll: { padding: Spacing['2xl'], gap: Spacing['2xl'], paddingBottom: 40 },
-
-  photoArea: {
-    height: 220,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
+  
+  // IDLE STATE
+  idleState: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.md,
-    borderWidth: 2,
-    borderColor: Colors.border,
-    borderStyle: 'dashed',
+    flex: 1,
+  },
+  idleTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#000',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  idleSub: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 22,
+    marginBottom: 60,
+  },
+  pulseCircle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  mainBtn: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.lg,
+  },
+  galleryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 30,
+    backgroundColor: '#F5F5F5',
+  },
+  galleryText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000',
+  },
+
+  // ANALYZING STATE
+  analyzingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageWrapper: {
+    width: '100%',
+    aspectRatio: 3/4,
+    borderRadius: 24,
     overflow: 'hidden',
+    backgroundColor: '#F9F9F9',
+    position: 'relative',
+    ...Shadows.md,
   },
-  photoGradient: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
-  },
-  photoEmoji: {
-    fontSize: 88,
-  },
-  photoLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 2,
-  },
-  cameraRow: {
-    position: 'absolute',
-    bottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cameraBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 8,
-    ...Shadows.sm,
-  },
-  cameraText: {
-    fontSize: FontSize.xs,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1,
-  },
-  fullImage: {
+  previewImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
   },
-
-  section: { gap: Spacing.md },
-  label: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.black,
-    letterSpacing: 1.5,
-  },
-  required: {
-    color: Colors.error,
-  },
-
-  emojiScroll: { gap: Spacing.sm },
-  emojiBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surface,
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
+    gap: 16,
   },
-  emojiBtnActive: {
-    borderColor: Colors.accent,
-    borderWidth: 2,
-  },
-  emojiText: { fontSize: 26 },
-
-  input: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  textArea: {
-    minHeight: 70,
-    textAlignVertical: 'top',
-  },
-
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  catBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  catBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  catText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
+  scanningText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
     letterSpacing: 1,
   },
-  catTextActive: { color: '#fff' },
 
-  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  colorBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.border,
+  // DONE STATE
+  doneState: {
+    flex: 1,
+    paddingBottom: 40,
   },
-  colorBtnActive: {
-    borderColor: Colors.accent,
-    borderWidth: 3,
+  aiBadge: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#000',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  aiBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  extractedInfo: {
+    marginTop: 24,
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#000',
+    marginBottom: 20,
+  },
+  tagsGrid: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  tag: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 120,
+  },
+  tagLabel: {
+    fontSize: 10,
+    color: '#999',
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  tagValue: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '900',
   },
 
   saveMainBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.accent,
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.md,
-    ...Shadows.md,
+    gap: 10,
+    backgroundColor: '#000',
+    paddingVertical: 18,
+    borderRadius: 30,
+    ...Shadows.lg,
   },
   saveMainBtnText: {
-    fontSize: FontSize.md,
+    fontSize: 14,
     color: '#fff',
-    fontWeight: FontWeight.black,
+    fontWeight: '900',
     letterSpacing: 2,
+  },
+  retakeBtn: {
+    marginTop: 20,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  retakeText: {
+    color: '#999',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });

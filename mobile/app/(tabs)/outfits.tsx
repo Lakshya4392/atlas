@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, FlatList, Dimensions, Image, ActivityIndicator, Platform
+  TouchableOpacity, FlatList, Dimensions, Image, ActivityIndicator, Platform, Animated
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +25,47 @@ const getBackendUrl = () => {
     return `http://${ip}:3000`;
   }
   return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
+const SkeletonOutfitCard = () => {
+  const animValue = React.useRef(new Animated.Value(0.5)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={styles.card}>
+      <Animated.View style={[styles.cardImage, { backgroundColor: '#E5E5E5', opacity: animValue }]} />
+      <View style={styles.cardInfo}>
+        <Animated.View style={{ width: '70%', height: 12, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue, marginBottom: 4 }} />
+        <Animated.View style={{ width: '40%', height: 10, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue }} />
+      </View>
+    </View>
+  );
+};
+
+const SkeletonPlanRow = () => {
+  const animValue = React.useRef(new Animated.Value(0.5)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={styles.planRow}>
+      <Animated.View style={[styles.dayBox, { backgroundColor: '#E5E5E5', opacity: animValue }]} />
+      <Animated.View style={[styles.planCard, { backgroundColor: '#E5E5E5', borderColor: 'transparent', opacity: animValue, height: 60 }]} />
+    </View>
+  );
 };
 
 export default function OutfitsScreen() {
@@ -61,14 +102,17 @@ export default function OutfitsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>OUTFITS</Text>
+        <View>
+          <Text style={styles.title}>WARDROBE</Text>
+          <Text style={styles.subtitle}>Curated Looks</Text>
+        </View>
         <TouchableOpacity
           style={styles.genBtn}
           onPress={() => router.push('/(tabs)/ai-stylist')}
           activeOpacity={0.8}
         >
-          <Ionicons name="sparkles" size={14} color="#fff" />
-          <Text style={styles.genBtnText}>AI GENERATE</Text>
+          <Ionicons name="sparkles" size={16} color="#fff" />
+          <Text style={styles.genBtnText}>AI STYLIST</Text>
         </TouchableOpacity>
       </View>
 
@@ -122,8 +166,19 @@ export default function OutfitsScreen() {
 
           {/* ── Grid ── */}
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#000" />
+            <View style={styles.grid}>
+              <View style={styles.row}>
+                <SkeletonOutfitCard />
+                <SkeletonOutfitCard />
+              </View>
+              <View style={styles.row}>
+                <SkeletonOutfitCard />
+                <SkeletonOutfitCard />
+              </View>
+              <View style={styles.row}>
+                <SkeletonOutfitCard />
+                <SkeletonOutfitCard />
+              </View>
             </View>
           ) : (
           <FlatList
@@ -204,50 +259,56 @@ export default function OutfitsScreen() {
             <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
             <Text style={styles.plannerHeaderText}>WEEKLY SCHEDULE</Text>
           </View>
-          {DAYS.map((day, i) => {
-            const outfit = outfits[i % Math.max(outfits.length, 1)];
-            const isToday = i === (new Date().getDay() + 6) % 7;
-            const pieces = outfit?.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
-            return (
-              <TouchableOpacity
-                key={day}
-                style={[styles.planRow, isToday && styles.planRowToday]}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.dayBox, isToday && styles.dayBoxToday]}>
-                  <Text style={[styles.dayText, isToday && styles.dayTextToday]}>{day}</Text>
-                </View>
-                <View style={[styles.planCard, isToday && styles.planCardToday]}>
-                  {outfit ? (
-                    <>
-                      <View style={styles.planImages}>
-                        {pieces.slice(0, 3).map((p: any, j: number) => (
-                          <View key={j} style={styles.planImageWrap}>
-                            {p?.imageUrl ? (
-                              <Image source={{ uri: p.imageUrl }} style={styles.planImage} resizeMode="cover" />
-                            ) : (
-                              <Ionicons name="shirt-outline" size={16} color="#999" />
-                            )}
-                          </View>
-                        ))}
+          {loading ? (
+            <>
+              {[1, 2, 3, 4, 5].map(i => <SkeletonPlanRow key={`skel-plan-${i}`} />)}
+            </>
+          ) : (
+            DAYS.map((day, i) => {
+              const outfit = outfits[i % Math.max(outfits.length, 1)];
+              const isToday = i === (new Date().getDay() + 6) % 7;
+              const pieces = outfit?.items?.map((oi: any) => oi.clothingItem).filter(Boolean) || [];
+              return (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.planRow, isToday && styles.planRowToday]}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.dayBox, isToday && styles.dayBoxToday]}>
+                    <Text style={[styles.dayText, isToday && styles.dayTextToday]}>{day}</Text>
+                  </View>
+                  <View style={[styles.planCard, isToday && styles.planCardToday]}>
+                    {outfit ? (
+                      <>
+                        <View style={styles.planImages}>
+                          {pieces.slice(0, 3).map((p: any, j: number) => (
+                            <View key={j} style={styles.planImageWrap}>
+                              {p?.imageUrl ? (
+                                <Image source={{ uri: p.imageUrl }} style={styles.planImage} resizeMode="cover" />
+                              ) : (
+                                <Ionicons name="shirt-outline" size={16} color="#999" />
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                        <View style={styles.planInfo}>
+                          <Text style={styles.planName}>{outfit.name?.toUpperCase()}</Text>
+                          <Text style={styles.planOcc}>{outfit.occasion}</Text>
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={styles.planEmpty}>No outfit planned</Text>
+                    )}
+                    {isToday && (
+                      <View style={styles.todayBadge}>
+                        <Text style={styles.todayBadgeText}>TODAY</Text>
                       </View>
-                      <View style={styles.planInfo}>
-                        <Text style={styles.planName}>{outfit.name?.toUpperCase()}</Text>
-                        <Text style={styles.planOcc}>{outfit.occasion}</Text>
-                      </View>
-                    </>
-                  ) : (
-                    <Text style={styles.planEmpty}>No outfit planned</Text>
-                  )}
-                  {isToday && (
-                    <View style={styles.todayBadge}>
-                      <Text style={styles.todayBadgeText}>TODAY</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -261,31 +322,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing['2xl'],
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.lg,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '900',
-    color: Colors.textPrimary,
-    letterSpacing: 2,
+    color: '#000',
+    letterSpacing: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '600',
+    marginTop: 2,
+    letterSpacing: 1,
   },
   genBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#000',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.full,
-    ...Shadows.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    ...Shadows.md,
   },
   genBtnText: {
     fontSize: 10,
     color: '#fff',
-    fontWeight: FontWeight.black,
-    letterSpacing: 1,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
 
   tabsContainer: {
@@ -373,10 +441,9 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: '100%',
-    aspectRatio: 0.85,
-    backgroundColor: '#F9F9F9',
+    aspectRatio: 0.8,
+    backgroundColor: '#F5F5F5',
     borderRadius: 20,
-    padding: 10,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -384,24 +451,23 @@ const styles = StyleSheet.create({
   imageGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
     width: '100%',
     height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   imageThumb: {
-    width: '46%',
-    height: '46%',
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    width: '50%',
+    height: '50%',
+    backgroundColor: '#F5F5F5',
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFF',
   },
   imageThumbFull: {
-    width: '90%',
-    height: '90%',
+    width: '100%',
+    height: '100%',
+    borderWidth: 0,
   },
   thumbImg: { width: '100%', height: '100%' },
   aiBadge: {

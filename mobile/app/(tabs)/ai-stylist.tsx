@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, KeyboardAvoidingView, Platform, Dimensions, ActivityIndicator, Image, Modal, FlatList, Animated
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -48,6 +49,7 @@ export default function AIStylistScreen() {
 
   // Chat history state
   const [showHistory, setShowHistory] = useState(false);
+  const [showClosetModal, setShowClosetModal] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
@@ -244,7 +246,6 @@ export default function AIStylistScreen() {
         const uploadRes = await fetch(`${BACKEND_URL}/api/upload`, {
           method: 'POST',
           body: formData,
-          headers: { 'Content-Type': 'multipart/form-data' },
         });
         const uploadData = await uploadRes.json();
 
@@ -280,8 +281,8 @@ export default function AIStylistScreen() {
 
     // Step 2: Call fal.ai try-on with avatar + garment
     try {
-      if (!item.imageUrl) {
-        alert('This item has no image. Add a photo to the item first.');
+      if (!item || !item.imageUrl) {
+        alert('This item has no image available to try on. Please select a real item with a photo.');
         setTryOnLoading(false);
         return;
       }
@@ -293,6 +294,7 @@ export default function AIStylistScreen() {
           garm_img: item.imageUrl,
           human_img: currentAvatar,
           description: `${item.color} ${item.name}`,
+          category: item.category,
         }),
       });
 
@@ -355,11 +357,11 @@ export default function AIStylistScreen() {
           </TouchableOpacity>
 
           <View style={styles.weatherWidget}>
-            <Ionicons name="sunny" size={20} color="#FFA500" />
-            <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="sunny" size={14} color="#FFA500" />
               <Text style={styles.weatherTemp}>32°</Text>
-              <Text style={styles.weatherHiLo}>H:33° L:26°</Text>
             </View>
+            <Text style={styles.weatherHiLo}>H:33° L:26°</Text>
           </View>
 
           <TouchableOpacity style={styles.topBarCircle} onPress={() => setShowHistory(true)}>
@@ -376,9 +378,6 @@ export default function AIStylistScreen() {
         >
           {messages.length === 0 && (
             <View style={styles.welcomeContainer}>
-              <View style={styles.aiAvatarSmall}>
-                <Ionicons name="sparkles" size={16} color="#fff" />
-              </View>
               <Text style={styles.welcomeTitle}>ATLA AI STYLIST</Text>
               <Text style={styles.welcomeSub}>Personalized styling from your closet</Text>
             </View>
@@ -387,16 +386,21 @@ export default function AIStylistScreen() {
           {messages.length === 0 && (
             <View style={styles.suggestionsContainer}>
               {[
-                "What should I wear for a rainy day in NYC?",
-                "I have a dinner date tonight, style me.",
-                "Minimalist look for a brunch meet."
+                { icon: 'partly-sunny', text: "What should I wear for a rainy day in NYC?" },
+                { icon: 'restaurant', text: "I have a dinner date tonight, style me." },
+                { icon: 'cafe', text: "Minimalist look for a brunch meet." }
               ].map((s, idx) => (
                 <TouchableOpacity
                   key={idx}
                   style={styles.suggestionChip}
-                  onPress={() => setInput(s)}
+                  onPress={() => setInput(s.text)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.suggestionText}>{s}</Text>
+                  <View style={styles.suggestionIconWrap}>
+                    <Ionicons name={s.icon as any} size={14} color="#000" />
+                  </View>
+                  <Text style={styles.suggestionText}>{s.text}</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#CCC" style={{ marginLeft: 'auto' }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -464,8 +468,16 @@ export default function AIStylistScreen() {
                                 <TouchableOpacity><Ionicons name="thumbs-down-outline" size={24} color="#000" /></TouchableOpacity>
                                 <TouchableOpacity><Ionicons name="paper-plane-outline" size={24} color="#000" /></TouchableOpacity>
                               </View>
-                              <TouchableOpacity style={styles.createAvatarBtn} onPress={() => handleTryOn(outfit.items[0]?.item)}>
-                                <Text style={styles.createAvatarText}>Create Avatar</Text>
+                              <TouchableOpacity 
+                                style={[styles.createAvatarBtn, tryOnLoading && { opacity: 0.5 }]} 
+                                onPress={() => handleTryOn(outfit.items[0]?.item)}
+                                disabled={tryOnLoading}
+                              >
+                                {tryOnLoading ? (
+                                  <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                  <Text style={styles.createAvatarText}>Create Avatar</Text>
+                                )}
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -495,15 +507,15 @@ export default function AIStylistScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.floatingInputWrapper}>
           <View style={styles.floatingInputInner}>
             <TouchableOpacity style={styles.floatingInputIcon} onPress={handlePickImage}>
-              <Ionicons name="image-outline" size={20} color="#666" />
+              <Ionicons name="image-outline" size={20} color="#000" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.floatingInputIcon}>
-              <Ionicons name="shirt-outline" size={20} color="#666" />
+            <TouchableOpacity style={styles.floatingInputIcon} onPress={() => setShowClosetModal(true)}>
+              <Ionicons name="shirt-outline" size={20} color="#000" />
             </TouchableOpacity>
             
             <TextInput
               style={styles.floatingInput}
-              placeholder="Refine your looks..."
+              placeholder="Ask anything..."
               placeholderTextColor="#999"
               value={input}
               onChangeText={setInput}
@@ -511,15 +523,59 @@ export default function AIStylistScreen() {
               multiline={false}
             />
             
-            <TouchableOpacity style={styles.floatingInputIcon}>
-              <Ionicons name="mic-outline" size={20} color="#666" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.floatingInputIcon, styles.floatingSendBtn]} onPress={handleSend} disabled={loading}>
-              {loading ? <ActivityIndicator color="#000" /> : <Ionicons name="arrow-forward" size={16} color="#ccc" />}
-            </TouchableOpacity>
+            {input.trim().length > 0 ? (
+              <TouchableOpacity style={[styles.floatingInputIcon, styles.floatingSendBtn]} onPress={handleSend} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={18} color="#fff" />}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.floatingInputIcon}>
+                <Ionicons name="mic-outline" size={20} color="#000" />
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* ── Closet Selection Modal ── */}
+      <Modal visible={showClosetModal} transparent animationType="slide">
+        <View style={styles.historyOverlay}>
+          <View style={styles.historySheet}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>YOUR CLOSET</Text>
+              <TouchableOpacity onPress={() => setShowClosetModal(false)} style={styles.historyCloseBtn}>
+                <Ionicons name="close" size={22} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 16 }}>
+              {wardrobe.map(itm => (
+                <TouchableOpacity 
+                  key={itm.id} 
+                  style={{ width: 80, alignItems: 'center', gap: 8 }}
+                  onPress={() => {
+                    setInput(`Can you style this ${itm.name || 'item'}?`);
+                    setShowClosetModal(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ width: 80, height: 80, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
+                    {itm.imageUrl ? (
+                      <Image source={{ uri: itm.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : (
+                      <Ionicons name="shirt" size={24} color="#ccc" style={{ alignSelf: 'center', marginTop: 28 }} />
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#000' }} numberOfLines={2}>
+                    {itm.name || 'Untitled'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              {wardrobe.length === 0 && (
+                <Text style={{ color: '#999', fontSize: 12, paddingVertical: 20 }}>No items in closet.</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Chat History Modal ── */}
       <Modal visible={showHistory} transparent animationType="slide">
@@ -579,56 +635,58 @@ export default function AIStylistScreen() {
         </View>
       </Modal>
 
-      {/* ── Virtual Try-On Result Modal ── */}
-      <Modal visible={!!tryOnResult || tryOnLoading} transparent animationType="fade">
+      {/* ── Virtual Try-On Result Overlay ── */}
+      {tryOnLoading && (
+        <BlurView intensity={100} tint="light" style={[StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ width: '85%', backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 28, overflow: 'hidden', padding: 40, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', shadowColor: '#000', shadowOffset: {width:0, height:20}, shadowOpacity: 0.15, shadowRadius: 30 }}>
+              <ActivityIndicator size="large" color="#000" />
+              <Text style={{ marginTop: 24, fontSize: 16, fontWeight: '800', letterSpacing: 2, color: '#000' }}>TAILORING FIT...</Text>
+              <Text style={{ marginTop: 8, fontSize: 13, color: '#444', textAlign: 'center', lineHeight: 18 }}>AI is analyzing your avatar and fitting the garment perfectly.</Text>
+            </View>
+          </View>
+        </BlurView>
+      )}
+
+      {/* ── Result Modal (When Finished) ── */}
+      <Modal visible={!!tryOnResult && !tryOnLoading} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {tryOnLoading ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color="#000" />
-                <Text style={styles.modalLoadingTitle}>VIRTUAL TRY-ON</Text>
-                <Text style={styles.modalLoadingText}>AI is fitting the garment to your body...</Text>
-                <Text style={styles.modalLoadingHint}>This takes 15–30 seconds</Text>
-              </View>
-            ) : tryOnResult ? (
-              <>
-                <Image source={{ uri: tryOnResult }} style={styles.resultImage} resizeMode="cover" />
-                <TouchableOpacity style={styles.closeModalBtn} onPress={() => setTryOnResult(null)}>
-                  <Ionicons name="close" size={24} color="#000" />
-                </TouchableOpacity>
-                <View style={styles.modalFooter}>
-                  <Text style={styles.modalFooterTitle}>VIRTUAL LOOK</Text>
-                  <Text style={styles.modalFooterSub}>AI-generated try-on result.</Text>
-                  <TouchableOpacity
-                    style={{ backgroundColor: '#000', paddingVertical: 12, borderRadius: 24, marginTop: 12, alignItems: 'center' }}
-                    onPress={async () => {
-                      if (!userId) return;
-                      try {
-                        const res = await fetch(`${BACKEND_URL}/api/outfits`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            userId,
-                            name: 'AI Avatar Look',
-                            occasion: 'Virtual Try-On',
-                            itemIds: [],
-                            aiGenerated: true,
-                            imageUrl: tryOnResult,
-                          }),
-                        });
-                        const d = await res.json();
-                        if (d.success) {
-                          alert('Look saved to Outfits!');
-                          setTryOnResult(null);
-                        }
-                      } catch (e) {}
-                    }}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 1 }}>SAVE TO OUTFITS</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : null}
+            <Image source={{ uri: tryOnResult || '' }} style={styles.resultImage} resizeMode="cover" />
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setTryOnResult(null)}>
+              <Ionicons name="close" size={24} color="#000" />
+            </TouchableOpacity>
+            <View style={styles.modalFooter}>
+              <Text style={styles.modalFooterTitle}>VIRTUAL LOOK</Text>
+              <Text style={styles.modalFooterSub}>AI-generated try-on result.</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: '#000', paddingVertical: 12, borderRadius: 24, marginTop: 12, alignItems: 'center' }}
+                onPress={async () => {
+                  if (!userId) return;
+                  try {
+                    const res = await fetch(`${BACKEND_URL}/api/outfits`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        userId,
+                        name: 'AI Avatar Look',
+                        occasion: 'Virtual Try-On',
+                        itemIds: [],
+                        aiGenerated: true,
+                        imageUrl: tryOnResult,
+                      }),
+                    });
+                    const d = await res.json();
+                    if (d.success) {
+                      alert('Look saved to Outfits!');
+                      setTryOnResult(null);
+                    }
+                  } catch (e) {}
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 1 }}>SAVE TO OUTFITS</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -710,21 +768,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   suggestionsContainer: {
-    gap: 10,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    marginTop: 30,
+    gap: 12,
   },
   suggestionChip: {
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
     paddingHorizontal: 16,
-    borderRadius: 16,
+    paddingVertical: 14,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: '#EAEAEA',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  suggestionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   suggestionText: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '500',
+    color: '#000',
+    fontWeight: '600',
+    flex: 1,
   },
   messageRow: {
     flexDirection: 'row',
@@ -1105,12 +1180,12 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   floatingInputIcon: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
-    backgroundColor: '#F5F5F5',
+    borderRadius: 19,
+    backgroundColor: '#F8F9FA',
     marginHorizontal: 4,
   },
   floatingInput: {
@@ -1118,9 +1193,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
     paddingHorizontal: 8,
+    fontWeight: '500',
   },
   floatingSendBtn: {
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#000',
   },
 
   // Top Bar
@@ -1140,18 +1216,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   weatherWidget: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
   weatherTemp: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#000',
   },
   weatherHiLo: {
-    fontSize: 10,
-    color: '#666',
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#999',
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
 
   // ── Chat History ──

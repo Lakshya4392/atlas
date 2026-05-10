@@ -11,3 +11,9 @@ Before you make ANY code changes, you MUST create and switch to a git worktree.
 4. ONLY make edits inside the `.worktrees/` directory.
 
 If you edit files in the root `main` branch, you will be terminated by the Orchestrator.
+
+6. GIT SUBMODULE SYNC RULE:
+When asked to push changes, you MUST push to all connected repositories to keep pointers in sync.
+- First: Push changes from within the child repository (e.g., `projects/atlas`).
+- Second: Go to the root repository (`AGBRAIN`), update the pointer (`git add projects/atlas`), and push.
+- Third: Go to the portfolio repository (`master_portfolio`), pull the latest pointer (`git pull`), commit the updated pointer, and push.
