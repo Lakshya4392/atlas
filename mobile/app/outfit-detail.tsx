@@ -1,18 +1,70 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { OUTFITS, CLOTHING_ITEMS } from '../constants/data';
 
 const { width } = Dimensions.get('window');
 
+const getBackendUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:3000`;
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
 export default function OutfitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const outfit = OUTFITS.find(o => o.id === id);
-  if (!outfit) return <View style={styles.container} />;
-  const items = CLOTHING_ITEMS.filter(c => outfit.items.includes(c.id));
+  const [outfit, setOutfit] = useState<any>(null);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const BACKEND_URL = getBackendUrl();
+
+  useEffect(() => {
+    const fetchOutfit = async () => {
+      // 1. Try mock data first
+      const mockOutfit = OUTFITS.find(o => o.id === id);
+      if (mockOutfit) {
+        setOutfit(mockOutfit);
+        setItems(CLOTHING_ITEMS.filter(c => mockOutfit.items.includes(c.id)));
+        setLoading(false);
+        return;
+      }
+
+      // 2. Try Backend API
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/outfits/outfit/${id}`);
+        const data = await response.json();
+        if (data.success && data.outfit) {
+          setOutfit(data.outfit);
+          const mappedItems = (data.outfit.items || []).map((i: any) => ({
+            ...i.clothingItem,
+            id: i.clothingItem.id,
+            name: i.clothingItem.name,
+            imageUrl: i.clothingItem.imageUrl,
+            brand: i.clothingItem.brand,
+            color: i.clothingItem.color,
+            tags: i.clothingItem.tags || [],
+            wearCount: i.clothingItem.wearCount || 0
+          }));
+          setItems(mappedItems);
+        }
+      } catch (error) {
+        console.error('Fetch outfit error', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOutfit();
+  }, [id]);
+
+  if (loading) return <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator size="large" color="#000" /></View>;
+  if (!outfit) return <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}><Text>Outfit not found</Text></View>;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -30,11 +82,17 @@ export default function OutfitDetailScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.heroImages}>
-            {items.map((item, i) => (
-              <View key={item.id} style={styles.heroBox}>
-                <Image source={item.image} style={styles.heroImage} resizeMode="cover" />
+            {outfit.imageUrl ? (
+              <View style={[styles.heroBox, { width: 200, height: 250 }]}>
+                <Image source={{ uri: outfit.imageUrl }} style={styles.heroImage} resizeMode="cover" />
               </View>
-            ))}
+            ) : (
+              items.map((item, i) => (
+                <View key={item.id} style={styles.heroBox}>
+                  <Image source={item.imageUrl ? { uri: item.imageUrl } : item.image} style={styles.heroImage} resizeMode="cover" />
+                </View>
+              ))
+            )}
           </View>
           {outfit.aiGenerated && (
             <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>✦ AI GENERATED</Text></View>
@@ -42,14 +100,13 @@ export default function OutfitDetailScreen() {
         </View>
 
         <View style={styles.body}>
-          <Text style={styles.outfitName}>{outfit.name.toUpperCase()}</Text>
+          <Text style={styles.outfitName}>{(outfit.name || 'Outfit').toUpperCase()}</Text>
 
           {/* Meta */}
           <View style={styles.metaRow}>
             {[
-              { icon: 'briefcase-outline', text: outfit.occasion },
-              { icon: 'partly-sunny-outline', text: outfit.weather },
-              { icon: 'calendar-outline', text: outfit.date },
+              { icon: 'briefcase-outline', text: outfit.occasion || 'General' },
+              { icon: 'calendar-outline', text: outfit.date || 'Saved' },
             ].map((m, i) => (
               <View key={i} style={styles.metaChip}>
                 <Ionicons name={m.icon as any} size={12} color={Colors.textSecondary} />
@@ -64,10 +121,10 @@ export default function OutfitDetailScreen() {
             <View style={styles.ratingRight}>
               <View style={styles.stars}>
                 {[1, 2, 3, 4, 5].map(s => (
-                  <Ionicons key={s} name={s <= Math.floor(outfit.rating) ? 'star' : 'star-outline'} size={18} color={Colors.accent} />
+                  <Ionicons key={s} name={s <= Math.floor(outfit.rating || 5) ? 'star' : 'star-outline'} size={18} color={Colors.accent} />
                 ))}
               </View>
-              <Text style={styles.ratingValue}>{outfit.rating}/5</Text>
+              <Text style={styles.ratingValue}>{outfit.rating || 5}/5</Text>
             </View>
           </View>
 
@@ -81,13 +138,13 @@ export default function OutfitDetailScreen() {
                 onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
               >
                 <View style={styles.pieceImageWrap}>
-                  <Image source={item.image} style={styles.pieceImage} resizeMode="cover" />
+                  <Image source={item.imageUrl ? { uri: item.imageUrl } : item.image} style={styles.pieceImage} resizeMode="cover" />
                 </View>
                 <View style={styles.pieceInfo}>
-                  <Text style={styles.pieceName}>{item.name.toUpperCase()}</Text>
+                  <Text style={styles.pieceName}>{(item.name || 'Item').toUpperCase()}</Text>
                   <Text style={styles.pieceBrand}>{item.brand} · {item.color}</Text>
                   <View style={styles.pieceTags}>
-                    {item.tags.slice(0, 2).map(t => (
+                    {(item.tags || []).slice(0, 2).map((t: string) => (
                       <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
                     ))}
                   </View>
