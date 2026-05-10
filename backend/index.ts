@@ -413,11 +413,15 @@ app.post('/api/clothes/extract', upload.single('image'), async (req, res) => {
 
     let clothingBuffer: Buffer;
     const MAX_RETRIES = 3;
-    const HF_TOKEN = process.env.HF_TOKEN || process.env.HF_TOKEN_2 || '';
+    const hfTokens = [];
+    if (process.env.HF_TOKEN) hfTokens.push(process.env.HF_TOKEN);
+    if (process.env.HF_TOKEN_2) hfTokens.push(process.env.HF_TOKEN_2);
+    if (process.env.HF_TOKEN_3) hfTokens.push(process.env.HF_TOKEN_3);
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`   🔄 Attempt ${attempt}/${MAX_RETRIES}...`);
+        const currentToken = hfTokens[(attempt - 1) % hfTokens.length] || '';
+        console.log(`   🔄 Attempt ${attempt}/${MAX_RETRIES} (Using Token ${(attempt - 1) % hfTokens.length + 1})...`);
         const sharpModule = await import('sharp');
         const sharp = sharpModule.default;
 
@@ -426,7 +430,7 @@ app.post('/api/clothes/extract', upload.single('image'), async (req, res) => {
         const segRes = await fetch('https://router.huggingface.co/hf-inference/models/mattmdjaga/segformer_b2_clothes', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${HF_TOKEN}`,
+            'Authorization': `Bearer ${currentToken}`,
             'Content-Type': 'image/jpeg',
           },
           body: imageBuffer,
@@ -603,16 +607,31 @@ app.post('/api/clothes/extract', upload.single('image'), async (req, res) => {
                 
                 const prompt = `${description}, perfect 1:1 replica, single isolated clothing item, perfectly straight, professionally ironed flat-lay e-commerce product photo, studio lighting, pristine solid white background, high end fashion photography, photorealistic 8k, ultra-detailed textures, no extra objects, clean edges`;
                 
-                const fluxRes = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', {
-                  method: 'POST',
-                  headers: { 'Authorization': `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ inputs: prompt })
-                });
+                let fluxSuccess = false;
+                for (let tIndex = 0; tIndex < hfTokens.length; tIndex++) {
+                  try {
+                    console.log(`   🎨 Calling FLUX.1 (Token ${tIndex + 1})...`);
+                    const fluxRes = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${hfTokens[tIndex]}`, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ inputs: prompt })
+                    });
 
-                if (fluxRes.ok) {
-                  const generatedBuf = Buffer.from(await fluxRes.arrayBuffer());
-                  if (generatedBuf.length > 1000) clothingBuffer = generatedBuf;
+                    if (fluxRes.ok) {
+                      const generatedBuf = Buffer.from(await fluxRes.arrayBuffer());
+                      if (generatedBuf.length > 1000) {
+                        clothingBuffer = generatedBuf;
+                        fluxSuccess = true;
+                        break;
+                      }
+                    } else {
+                       console.log(`   ⚠️ FLUX Token ${tIndex + 1} rejected.`);
+                    }
+                  } catch (e) {
+                     console.log(`   ⚠️ FLUX Token ${tIndex + 1} error.`);
+                  }
                 }
+                if (!fluxSuccess) console.log(`   ⚠️ All FLUX tokens failed, using original.`);
               }
             } catch (genErr) {
               console.log(`   ⚠️ Item ${i + 1}: Generative failed, using original.`);
