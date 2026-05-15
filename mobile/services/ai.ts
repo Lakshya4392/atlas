@@ -22,7 +22,7 @@ function buildPrompt(prompt: string, wardrobe: any[], weather: any, profile: any
     : 'User has no items in their closet yet.';
 
   return {
-    system: `You are the Alta Daily AI Fashion Stylist. You create complete, cohesive outfits.
+    system: `You are the Fashion X AI Fashion Stylist. You create complete, cohesive outfits.
 
 ═══ CONTEXT ═══
 Gender: ${gender}

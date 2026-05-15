@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StatusBar } from 'react-native';
 
 export default function Index() {
   const [loading, setLoading] = useState(true);
@@ -31,18 +31,22 @@ export default function Index() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
+        <StatusBar barStyle="dark-content" />
         <ActivityIndicator size="large" color="#000000" />
       </View>
     );
   }
 
-  // If user session exists, go to tabs if onboarded, else onboarding
-  if (user) {
-    if (onboarded) {
-      return <Redirect href="/(tabs)" />;
-    }
+  // ── Returning user with completed onboarding → straight to home ──
+  if (user && onboarded) {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  // ── Logged in but hasn't completed onboarding → finish setup ──
+  if (user && !onboarded) {
     return <Redirect href="/onboarding" />;
   }
 
-  return <Redirect href="/register" />;
+  // ── New user → premium welcome screen ──
+  return <Redirect href="/welcome" />;
 }

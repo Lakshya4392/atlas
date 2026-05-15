@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert,
-  KeyboardAvoidingView, Platform, StatusBar,
+  KeyboardAvoidingView, Platform, StatusBar, ScrollView
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
-} from '../constants/theme';
 import { useAuth } from '../src/contexts/AuthContext';
 
 export default function RegisterScreen() {
@@ -32,55 +29,59 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" />
+      
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.replace('/login')}
-          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-        >
-          <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.replace('/welcome')}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+        </View>
 
-        <View style={styles.content}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join Atla Daily today</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Create{'\n'}Account.</Text>
+            <Text style={styles.subtitle}>Join VEYRA today</Text>
+          </View>
 
           <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>First Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="First Name"
-                placeholderTextColor={Colors.textMuted}
-                value={firstName}
-                onChangeText={setFirstName}
-                autoCapitalize="words"
-              />
-            </View>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Last Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Last Name"
-                placeholderTextColor={Colors.textMuted}
-                value={lastName}
-                onChangeText={setLastName}
-                autoCapitalize="words"
-              />
+            <View style={styles.row}>
+              <View style={[styles.inputContainer, { flex: 1 }]}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="First Name"
+                  placeholderTextColor="#999"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  autoCapitalize="words"
+                />
+              </View>
+              <View style={[styles.inputContainer, { flex: 1 }]}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Last Name"
+                  placeholderTextColor="#999"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  autoCapitalize="words"
+                />
+              </View>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="your@email.com"
-                placeholderTextColor={Colors.textMuted}
+                placeholder="Email Address"
+                placeholderTextColor="#999"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -88,12 +89,12 @@ export default function RegisterScreen() {
               />
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Secure Password"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor="#999"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -101,22 +102,29 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.registerBtn, state.isLoading && styles.registerBtnDisabled]}
+              style={[styles.primaryBtn, state.isLoading && styles.primaryBtnDisabled]}
               onPress={handleRegister}
               disabled={state.isLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Text style={styles.registerBtnText}>
+              <Text style={styles.primaryBtnText}>
                 {state.isLoading ? 'Creating account...' : 'Sign Up'}
               </Text>
               {!state.isLoading && (
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <View style={styles.arrowCircle}>
+                  <Ionicons name="arrow-forward" size={18} color="#000" />
+                </View>
               )}
             </TouchableOpacity>
           </View>
+          
+          <View style={{ height: 40 }} />
+        </ScrollView>
 
-          <TouchableOpacity style={styles.loginLink} onPress={() => router.replace('/login')}>
-            <Text style={styles.loginLinkText}>Already have an account? Sign in</Text>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Already have an account? </Text>
+          <TouchableOpacity onPress={() => router.replace('/login')}>
+            <Text style={styles.footerLink}>Sign in</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -127,92 +135,113 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   backBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: Spacing['2xl'],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    zIndex: 10,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: Spacing['2xl'],
-    paddingTop: Platform.OS === 'ios' ? 120 : 100,
-    paddingBottom: 60,
+  scrollContent: {
+    paddingHorizontal: 32,
+    flexGrow: 1,
+  },
+  titleContainer: {
+    marginTop: 20,
+    marginBottom: 40,
   },
   title: {
-    fontSize: FontSize['4xl'],
-    fontWeight: FontWeight.black,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Spacing.sm,
+    fontSize: 44,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: -1,
+    lineHeight: 52,
+    marginBottom: 12,
   },
   subtitle: {
-    fontSize: FontSize.lg,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Spacing['3xl'],
-    lineHeight: 24,
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '400',
   },
   form: {
-    gap: Spacing.xl,
+    gap: 16,
   },
-  inputGroup: {
-    gap: Spacing.sm,
+  row: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  inputLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-  },
-  input: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  registerBtn: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.accent,
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.full,
-    marginTop: Spacing.md,
-    ...Shadows.md,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    height: 64,
   },
-  registerBtnDisabled: {
-    opacity: 0.6,
+  inputIcon: {
+    marginRight: 12,
   },
-  registerBtnText: {
-    fontSize: FontSize.lg,
-    color: '#fff',
-    fontWeight: FontWeight.black,
-    letterSpacing: 1,
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: '#000',
+    fontWeight: '500',
+    height: '100%',
   },
-  loginLink: {
+  primaryBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#000',
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
-    paddingVertical: Spacing.lg,
-    marginTop: Spacing.lg,
+    justifyContent: 'center',
+    marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  loginLinkText: {
-    fontSize: FontSize.md,
-    color: Colors.accent,
-    fontWeight: FontWeight.medium,
+  primaryBtnDisabled: {
+    opacity: 0.7,
+  },
+  primaryBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFF',
+    letterSpacing: 0.5,
+    marginRight: 12,
+  },
+  arrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingTop: 16,
+    paddingBottom: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  footerText: {
+    fontSize: 15,
+    color: '#666',
+  },
+  footerLink: {
+    fontSize: 15,
+    color: '#000',
+    fontWeight: '700',
   },
 });

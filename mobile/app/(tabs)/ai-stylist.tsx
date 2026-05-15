@@ -236,9 +236,12 @@ export default function AIStylistScreen() {
       // Show loading while uploading avatar
       setTryOnLoading(true);
       try {
+        const localUri = result.assets[0].uri;
+        const fileUri = Platform.OS === 'android' && !localUri.startsWith('file://') ? `file://${localUri}` : localUri;
+
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: fileUri,
           type: 'image/jpeg',
           name: 'avatar.jpg',
         } as any);
@@ -350,22 +353,14 @@ export default function AIStylistScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Top Header (Matching Image) */}
+        {/* Minimal Top Header */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.topBarCircle} onPress={() => router.replace('/(tabs)')}>
-            <Ionicons name="chevron-back" size={20} color="#000" />
+            <Ionicons name="arrow-back" size={22} color="#000" />
           </TouchableOpacity>
 
-          <View style={styles.weatherWidget}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons name="sunny" size={14} color="#FFA500" />
-              <Text style={styles.weatherTemp}>32°</Text>
-            </View>
-            <Text style={styles.weatherHiLo}>H:33° L:26°</Text>
-          </View>
-
           <TouchableOpacity style={styles.topBarCircle} onPress={() => setShowHistory(true)}>
-            <Ionicons name="time-outline" size={20} color="#000" />
+            <Ionicons name="time-outline" size={22} color="#000" />
           </TouchableOpacity>
         </View>
 
@@ -373,36 +368,35 @@ export default function AIStylistScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.chatScroll}
-          contentContainerStyle={styles.chatContent}
+          contentContainerStyle={[styles.chatContent, messages.length === 0 && { flex: 1, justifyContent: 'center' }]}
           showsVerticalScrollIndicator={false}
         >
           {messages.length === 0 && (
-            <View style={styles.welcomeContainer}>
-              <Text style={styles.welcomeTitle}>ATLA AI STYLIST</Text>
-              <Text style={styles.welcomeSub}>Personalized styling from your closet</Text>
-            </View>
-          )}
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.welcomeName}>Hello, {user?.name?.split(' ')[0] || 'Lakshay'}.</Text>
+              <Text style={styles.welcomeQuestion}>How can I style{'\n'}you today?</Text>
 
-          {messages.length === 0 && (
-            <View style={styles.suggestionsContainer}>
-              {[
-                { icon: 'partly-sunny', text: "What should I wear for a rainy day in NYC?" },
-                { icon: 'restaurant', text: "I have a dinner date tonight, style me." },
-                { icon: 'cafe', text: "Minimalist look for a brunch meet." }
-              ].map((s, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.suggestionChip}
-                  onPress={() => setInput(s.text)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.suggestionIconWrap}>
-                    <Ionicons name={s.icon as any} size={14} color="#000" />
-                  </View>
-                  <Text style={styles.suggestionText}>{s.text}</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#CCC" style={{ marginLeft: 'auto' }} />
-                </TouchableOpacity>
-              ))}
+              <View style={styles.gridContainer}>
+                {[
+                  { icon: 'moon-outline', color: '#4A90E2', title: "Night Out", sub: "Dark tones, bold accessories" },
+                  { icon: 'briefcase-outline', color: '#F5A623', title: "Office Ready", sub: "Sharp, professional & chic" },
+                  { icon: 'cafe-outline', color: '#7ED321', title: "Brunch Date", sub: "Light, airy & comfortable" },
+                  { icon: 'walk-outline', color: '#D0021B', title: "Streetwear", sub: "Urban, oversized & trendy" }
+                ].map((s, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.gridCard}
+                    onPress={() => setInput(`Style me a ${s.title.toLowerCase()} look: ${s.sub}`)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.gridIconWrap}>
+                      <Ionicons name={s.icon as any} size={16} color={s.color} />
+                    </View>
+                    <Text style={styles.gridCardTitle}>{s.title}</Text>
+                    <Text style={styles.gridCardSub} numberOfLines={2}>{s.sub}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
 
@@ -506,17 +500,15 @@ export default function AIStylistScreen() {
         {/* Floating Pill Input */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.floatingInputWrapper}>
           <View style={styles.floatingInputInner}>
-            <TouchableOpacity style={styles.floatingInputIcon} onPress={handlePickImage}>
-              <Ionicons name="image-outline" size={20} color="#000" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.floatingInputIcon} onPress={() => setShowClosetModal(true)}>
-              <Ionicons name="shirt-outline" size={20} color="#000" />
+            {/* The '+' button matching Dribbble */}
+            <TouchableOpacity style={styles.floatingPlusIcon} onPress={() => setShowClosetModal(true)}>
+              <Ionicons name="add" size={24} color="#000" />
             </TouchableOpacity>
             
             <TextInput
               style={styles.floatingInput}
-              placeholder="Ask anything..."
-              placeholderTextColor="#999"
+              placeholder="Type prompt..."
+              placeholderTextColor="#888"
               value={input}
               onChangeText={setInput}
               onSubmitEditing={handleSend}
@@ -524,12 +516,12 @@ export default function AIStylistScreen() {
             />
             
             {input.trim().length > 0 ? (
-              <TouchableOpacity style={[styles.floatingInputIcon, styles.floatingSendBtn]} onPress={handleSend} disabled={loading}>
+              <TouchableOpacity style={[styles.floatingPlusIcon, { backgroundColor: '#000', marginRight: 0, marginLeft: 10 }]} onPress={handleSend} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={18} color="#fff" />}
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.floatingInputIcon}>
-                <Ionicons name="mic-outline" size={20} color="#000" />
+              <TouchableOpacity style={styles.floatingMicIcon}>
+                <Ionicons name="mic-outline" size={22} color="#888" />
               </TouchableOpacity>
             )}
           </View>
@@ -739,67 +731,102 @@ const styles = StyleSheet.create({
   },
   chatContent: {
     paddingHorizontal: 0,
-    paddingBottom: 100,
+    paddingBottom: 20,
   },
-  welcomeContainer: {
+  // Empty State Styles (Matching Dribbble)
+  emptyStateContainer: {
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 30,
-  },
-  aiAvatarSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  welcomeTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 4,
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  welcomeSub: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '500',
-  },
-  suggestionsContainer: {
     paddingHorizontal: 20,
-    marginTop: 30,
-    gap: 12,
+    marginTop: -40, // Shift up slightly to center perfectly
   },
-  suggestionChip: {
+  stylistPill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 20,
+    paddingVertical: 8,
+    borderRadius: 24,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: '#EAEAEA',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
   },
-  suggestionIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F5F5F5',
+  stylistPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: 1,
+  },
+  stylistPillPro: {
+    backgroundColor: '#000',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  stylistPillProText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  welcomeName: {
+    fontSize: 14,
+    color: '#888',
+    fontWeight: '500',
+    marginBottom: 6,
+    marginTop: 20, // Add a bit of top margin to offset the removed pill
+  },
+  welcomeQuestion: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
+    textAlign: 'center',
+    lineHeight: 34,
+    marginBottom: 40,
+    letterSpacing: -0.5,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 16, // Use gap for spacing between rows
+  },
+  gridCard: {
+    width: (width - 56) / 2, // (width - horizontal padding (40) - gap (16)) / 2
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  gridIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F9F9F9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginBottom: 12,
   },
-  suggestionText: {
-    fontSize: 13,
+  gridCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
     color: '#000',
-    fontWeight: '600',
-    flex: 1,
+    marginBottom: 4,
+  },
+  gridCardSub: {
+    fontSize: 11,
+    color: '#999',
+    fontWeight: '500',
+    lineHeight: 16,
   },
   messageRow: {
     flexDirection: 'row',
@@ -1159,44 +1186,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Floating Input
   floatingInputWrapper: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 20 : 10,
-    left: 16,
-    right: 16,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 24,
+    paddingTop: 10,
+    backgroundColor: 'transparent',
   },
   floatingInputInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 30,
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 40,
     paddingHorizontal: 8,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.03, // Very subtle shadow
     shadowRadius: 10,
-    elevation: 4,
+    elevation: 2, // Minimal elevation for Android
   },
-  floatingInputIcon: {
-    width: 38,
-    height: 38,
+  floatingPlusIcon: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
-    backgroundColor: '#F8F9FA',
-    marginHorizontal: 4,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5', // Flat grey circle
+    marginRight: 12,
+  },
+  floatingMicIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
   },
   floatingInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     color: '#000',
-    paddingHorizontal: 8,
     fontWeight: '500',
-  },
-  floatingSendBtn: {
-    backgroundColor: '#000',
   },
 
   // Top Bar

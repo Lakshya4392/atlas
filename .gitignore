@@ -34,6 +34,11 @@ yarn-error.*
 .env
 .env*.local
 
+# secrets & service accounts
+*.json.key
+*-service-account*.json
+vton-project-*.json
+
 # typescript
 *.tsbuildinfo
 

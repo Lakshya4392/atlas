@@ -116,6 +116,22 @@ export default function OutfitsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Segment Toggle ── */}
+      <View style={styles.segmentContainer}>
+        <View style={styles.segment}>
+          <TouchableOpacity 
+            style={styles.segmentBtn}
+            onPress={() => router.push('/closet')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.segmentText}>WARDROBE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.segmentBtn, styles.segmentBtnActive]}>
+            <Text style={[styles.segmentText, styles.segmentTextActive]}>OUTFITS</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Tabs ── */}
       <View style={styles.tabsContainer}>
         <View style={styles.tabs}>
@@ -354,6 +370,37 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '900',
     letterSpacing: 1.5,
+  },
+
+  segmentContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 24,
+    padding: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#FFF',
+    ...Shadows.sm,
+  },
+  segmentText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#888',
+    letterSpacing: 1,
+  },
+  segmentTextActive: {
+    color: '#000',
   },
 
   tabsContainer: {

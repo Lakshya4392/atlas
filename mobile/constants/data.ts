@@ -1,5 +1,5 @@
 /**
- * Mock data for Alta Daily
+ * Mock data for Fashion X
  */
 
 export interface ClothingItem {

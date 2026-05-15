@@ -8,10 +8,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
-} from '../../constants/theme';
-import { CLOTHING_ITEMS, CATEGORIES } from '../../constants/data';
 
 const { width } = Dimensions.get('window');
 
@@ -24,17 +20,24 @@ const getBackendUrl = () => {
   return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
 };
 
+const CATEGORIES = [
+  'Favorite', 'All', 'Casual', 'Work', 'Sport', 'Party'
+];
+
 const ItemCard = ({ item, index }: { item: any, index: number }) => {
   const isTall = index % 3 === 0;
-  const cardHeight = isTall ? 260 : 200;
+  const cardHeight = isTall ? 280 : 220;
+
+  // Simulate some items being favorited for the visual effect in reference
+  const isFav = item.favorite || index % 4 === 0;
 
   return (
     <TouchableOpacity
-      style={[styles.itemCard, { height: cardHeight + 60 }]}
+      style={[styles.itemCard, { height: cardHeight }]}
       activeOpacity={0.85}
       onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
     >
-      <View style={[styles.imageContainer, { height: cardHeight }]}>
+      <View style={styles.imageContainer}>
         {item.imageUrl ? (
           <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
         ) : item.image ? (
@@ -44,23 +47,19 @@ const ItemCard = ({ item, index }: { item: any, index: number }) => {
             <Ionicons name="shirt-outline" size={32} color="#CCC" />
           </View>
         )}
-        {item.favorite && (
+        {isFav && (
           <View style={styles.favBadge}>
-            <Ionicons name="heart" size={10} color="#000" />
+            <Ionicons name="heart" size={24} color="#FF3B30" />
           </View>
         )}
-      </View>
-      <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>{item.name?.toUpperCase()}</Text>
-        <Text style={styles.brand}>{item.brand}</Text>
       </View>
     </TouchableOpacity>
   );
 };
 
 export default function ClosetScreen() {
-  const [search, setSearch] = useState('');
-  const [cat, setCat] = useState('ALL');
+  const [activeTab, setActiveTab] = useState('Clothes');
+  const [cat, setCat] = useState('All');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const BACKEND_URL = getBackendUrl();
@@ -87,78 +86,75 @@ export default function ClosetScreen() {
   );
 
   const filtered = items.filter(i => {
-    const matchSearch = i.name?.toLowerCase().includes(search.toLowerCase()) || 
-                      (i.brand && i.brand.toLowerCase().includes(search.toLowerCase()));
-    const matchCat = cat === 'ALL' || i.category?.toUpperCase() === cat;
-    return matchSearch && matchCat;
+    if (cat === 'Favorite') return i.favorite;
+    if (cat === 'All') return true;
+    return i.category?.toLowerCase() === cat.toLowerCase();
   });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>MY CLOSET</Text>
-        <TouchableOpacity 
-          style={styles.addBtn}
-          onPress={() => router.push('/add-item')}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={24} color="#fff" />
+        <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/search')}>
+          <Ionicons name="search" size={16} color="#555" />
+          <Text style={styles.headerBtnText}>Search</Text>
+        </TouchableOpacity>
+        
+        <Text style={styles.title}>Closet</Text>
+        
+        <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/add-item')}>
+          <Ionicons name="add" size={18} color="#555" />
+          <Text style={styles.headerBtnText}>Upload</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        {/* ── Search ── */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search-outline" size={18} color="#999" />
-            <TextInput
-              placeholder="Search items..."
-              placeholderTextColor="#999"
-              style={styles.searchInput}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
+      {/* ── Segment Toggle ── */}
+      <View style={styles.segmentContainer}>
+        <View style={styles.segment}>
+          <TouchableOpacity 
+            style={[styles.segmentBtn, activeTab === 'Clothes' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('Clothes')}
+          >
+            <Text style={[styles.segmentText, activeTab === 'Clothes' && styles.segmentTextActive]}>Clothes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.segmentBtn, activeTab === 'Collections' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('Collections')}
+          >
+            <Text style={[styles.segmentText, activeTab === 'Collections' && styles.segmentTextActive]}>Collections</Text>
+          </TouchableOpacity>
         </View>
+      </View>
 
-        {/* ── Categories ── */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        
+        {/* ── Category Filters ── */}
         <View style={styles.catWrapper}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
             {CATEGORIES.map(c => (
               <TouchableOpacity
-                key={c.id}
-                style={[styles.catChip, cat === c.name.toUpperCase() && styles.catChipActive]}
-                onPress={() => setCat(c.name.toUpperCase())}
+                key={c}
+                style={[styles.catChip, cat === c && styles.catChipActive]}
+                onPress={() => setCat(c)}
                 activeOpacity={0.7}
               >
-                <Ionicons name={c.icon as any} size={14} color={cat === c.name.toUpperCase() ? '#fff' : '#000'} />
-                <Text style={[styles.catText, cat === c.name.toUpperCase() && styles.catTextActive]}>
-                  {c.name.toUpperCase()}
+                <Text style={[styles.catText, cat === c && styles.catTextActive]}>
+                  {c}
                 </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
 
-        {/* ── Label ── */}
-        <View style={styles.labelRow}>
-          <Text style={styles.labelText}>{cat === 'ALL' ? 'ALL PIECES' : cat}</Text>
-          <Text style={styles.labelCount}>{filtered.length}</Text>
-        </View>
-
-        {/* ── Pinterest Grid ── */}
+        {/* ── Image-Only Masonry Grid ── */}
         {loading ? (
           <View style={styles.loader}>
             <ActivityIndicator size="large" color="#000" />
           </View>
         ) : filtered.length === 0 ? (
           <View style={styles.empty}>
-            <View style={styles.emptyIconBg}>
-              <Ionicons name="shirt-outline" size={40} color="#CCC" />
-            </View>
+            <Ionicons name="shirt-outline" size={40} color="#CCC" style={{ marginBottom: 12 }} />
             <Text style={styles.emptyTitle}>NO ITEMS FOUND</Text>
-            <Text style={styles.emptySub}>Try a different search or category.</Text>
           </View>
         ) : (
           <View style={styles.masonryGrid}>
@@ -180,77 +176,112 @@ export default function ClosetScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  scroll: { paddingBottom: 100 },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
-  title: { fontSize: 24, fontWeight: '900', color: '#000', letterSpacing: 1.5 },
-  addBtn: {
-    width: 44,
+  title: { 
+    fontSize: 20, 
+    fontWeight: '600', 
+    color: '#000',
+  },
+  headerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 4,
+  },
+  headerBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#555',
+  },
+
+  segmentContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: 30,
+    padding: 4,
+    width: 280,
+  },
+  segmentBtn: {
+    flex: 1,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.sm,
+    borderRadius: 22,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#888',
+  },
+  segmentTextActive: {
+    color: '#000',
+    fontWeight: '600',
   },
 
-  searchContainer: { paddingHorizontal: 20, marginTop: 10, marginBottom: 20 },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    height: 48,
-    gap: 12,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: '#000', fontWeight: '600' },
-
-  catWrapper: { height: 44, marginBottom: 24 },
-  catScroll: { paddingHorizontal: 20, gap: 12, alignItems: 'center' },
+  catWrapper: { height: 44, marginBottom: 20 },
+  catScroll: { paddingHorizontal: 16, gap: 10 },
   catChip: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-  },
-  catChipActive: { backgroundColor: '#000', borderColor: '#000' },
-  catText: { fontSize: 11, fontWeight: '800', color: '#666', letterSpacing: 1 },
-  catTextActive: { color: '#fff' },
-
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 20,
-    marginBottom: 16,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
-  labelText: { fontSize: 14, fontWeight: '900', color: '#000', letterSpacing: 1.5 },
-  labelCount: { fontSize: 12, color: '#999', fontWeight: '700' },
+  catChipActive: { 
+    backgroundColor: '#333',
+  },
+  catText: { 
+    fontSize: 13, 
+    fontWeight: '500', 
+    color: '#666',
+  },
+  catTextActive: { 
+    color: '#FFF',
+    fontWeight: '600',
+  },
 
-  masonryGrid: { flexDirection: 'row', paddingHorizontal: 20, gap: 16 },
-  masonryColumn: { flex: 1, gap: 20 },
-  itemCard: { width: '100%', backgroundColor: '#fff' },
+  masonryGrid: { flexDirection: 'row', paddingHorizontal: 16, gap: 12 },
+  masonryColumn: { flex: 1, gap: 12 },
+  itemCard: { width: '100%', marginBottom: 4 },
   imageContainer: {
     width: '100%',
+    height: '100%',
     borderRadius: 24,
-    backgroundColor: '#F9F9F9',
+    borderWidth: 4,
+    borderColor: '#FFF',
+    backgroundColor: '#EEE',
     overflow: 'hidden',
-    position: 'relative',
-    ...Shadows.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   image: { width: '100%', height: '100%' },
   placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -258,28 +289,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  info: { paddingTop: 12, paddingHorizontal: 4 },
-  name: { fontSize: 12, fontWeight: '900', color: '#000', letterSpacing: 0.5, marginBottom: 2 },
-  brand: { fontSize: 11, color: '#999', fontWeight: '600' },
 
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
   empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
-  emptyIconBg: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 2, marginBottom: 8 },
-  emptySub: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 14, fontWeight: '600', color: '#888' },
 });

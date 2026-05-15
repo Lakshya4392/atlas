@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert,
-  KeyboardAvoidingView, Platform, StatusBar,
+  KeyboardAvoidingView, Platform, StatusBar
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows,
-} from '../constants/theme';
 import { useAuth } from '../src/contexts/AuthContext';
 
 export default function LoginScreen() {
@@ -17,61 +14,62 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
 
   const handleLogin = async () => {
-    if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please enter your email and password');
       return;
     }
     try {
       await login(email.trim(), password);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'User not found. Please register first.');
+      Alert.alert('Login Failed', error.message || 'User not found or incorrect password.');
     }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" />
+      
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+        </View>
 
-        {/* Back button */}
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-        >
-          <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
-
-        {/* Content */}
         <View style={styles.content}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to your Alta Daily account</Text>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Welcome{'\n'}Back.</Text>
+            <Text style={styles.subtitle}>Sign in to access your wardrobe</Text>
+          </View>
 
           <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="your@email.com"
-                placeholderTextColor={Colors.textMuted}
+                placeholder="Email Address"
+                placeholderTextColor="#999"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoFocus
               />
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Your password"
-                placeholderTextColor={Colors.textMuted}
+                placeholder="Password"
+                placeholderTextColor="#999"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -79,25 +77,31 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.loginBtn, state.isLoading && styles.loginBtnDisabled]}
+              style={[styles.primaryBtn, state.isLoading && styles.primaryBtnDisabled]}
               onPress={handleLogin}
               disabled={state.isLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Text style={styles.loginBtnText}>
+              <Text style={styles.primaryBtnText}>
                 {state.isLoading ? 'Signing in...' : 'Sign In'}
               </Text>
               {!state.isLoading && (
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <View style={styles.arrowCircle}>
+                  <Ionicons name="arrow-forward" size={18} color="#000" />
+                </View>
               )}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.signupLink} onPress={() => router.replace('/onboarding')}>
-            <Text style={styles.signupLinkText}>Don't have an account? Sign up</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={styles.spacer} />
 
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.replace('/register')}>
+              <Text style={styles.footerLink}>Sign up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -106,91 +110,110 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
   backBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: Spacing['2xl'],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    zIndex: 10,
   },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing['2xl'],
-    paddingTop: Platform.OS === 'ios' ? 120 : 100,
-    paddingBottom: 60,
+    paddingHorizontal: 32,
+  },
+  titleContainer: {
+    marginTop: 20,
+    marginBottom: 40,
   },
   title: {
-    fontSize: FontSize['4xl'],
-    fontWeight: FontWeight.black,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Spacing.sm,
+    fontSize: 44,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: -1,
+    lineHeight: 52,
+    marginBottom: 12,
   },
   subtitle: {
-    fontSize: FontSize.lg,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Spacing['3xl'],
-    lineHeight: 24,
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '400',
   },
   form: {
-    gap: Spacing.xl,
+    gap: 16,
   },
-  inputGroup: {
-    gap: Spacing.sm,
-  },
-  inputLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-  },
-  input: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  loginBtn: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.accent,
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.full,
-    marginTop: Spacing.md,
-    ...Shadows.md,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    height: 64,
   },
-  loginBtnDisabled: {
-    opacity: 0.6,
+  inputIcon: {
+    marginRight: 12,
   },
-  loginBtnText: {
-    fontSize: FontSize.lg,
-    color: '#fff',
-    fontWeight: FontWeight.black,
-    letterSpacing: 1,
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: '#000',
+    fontWeight: '500',
+    height: '100%',
   },
-  signupLink: {
+  primaryBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#000',
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
-    paddingVertical: Spacing.lg,
+    justifyContent: 'center',
+    marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  signupLinkText: {
-    fontSize: FontSize.md,
-    color: Colors.accent,
-    fontWeight: FontWeight.medium,
+  primaryBtnDisabled: {
+    opacity: 0.7,
+  },
+  primaryBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFF',
+    letterSpacing: 0.5,
+    marginRight: 12,
+  },
+  arrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spacer: {
+    flex: 1,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingBottom: 24,
+  },
+  footerText: {
+    fontSize: 15,
+    color: '#666',
+  },
+  footerLink: {
+    fontSize: 15,
+    color: '#000',
+    fontWeight: '700',
   },
 });

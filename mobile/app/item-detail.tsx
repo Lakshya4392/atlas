@@ -27,14 +27,12 @@ const getBackendUrl = () => {
   return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
 };
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL'];
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [item, setItem] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
-  const [selectedSize, setSelectedSize] = useState('M');
   const BACKEND_URL = getBackendUrl();
   
   const [user, setUser] = useState<any>(null);
@@ -105,7 +103,7 @@ export default function ItemDetailScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={Colors.accent} />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -113,7 +111,7 @@ export default function ItemDetailScreen() {
   if (!item) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
+        <Ionicons name="alert-circle-outline" size={48} color="#CCC" />
         <Text style={styles.errorText}>Item not found</Text>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backBtnText}>GO BACK</Text>
@@ -122,8 +120,6 @@ export default function ItemDetailScreen() {
     );
   }
 
-  const outfitsWithItem = OUTFITS.filter(o => o.items.includes(item.id));
-  
   // Robust image source resolution
   let imageSource = null;
   if (item.imageUrl && item.imageUrl.trim() !== '') {
@@ -134,282 +130,110 @@ export default function ItemDetailScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ── Glassmorphism Header ── */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.glassCircle} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={20} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Product Details</Text>
+        <TouchableOpacity style={styles.glassCircle}>
+          <Ionicons name="ellipsis-horizontal" size={18} color="#000" />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} bounces={false}>
-        {/* ── Large Full-Bleed Image Area ── */}
-        <View style={styles.productImageArea}>
+        {/* ── Product Image Card ── */}
+        <View style={styles.imageCard}>
           <ScrollView
             ref={scrollViewRef}
-            horizontal
-            pagingEnabled
+            horizontal pagingEnabled
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+              const idx = Math.round(e.nativeEvent.contentOffset.x / (width - 40));
               setActiveIndex(idx);
             }}
-            style={{ width, height: '100%' }}
+            style={{ width: width - 40, height: '100%' }}
           >
             {imageSource ? (
-              <Image source={imageSource} style={{ width, height: '100%' }} resizeMode="cover" />
+              <Image source={imageSource} style={{ width: width - 40, height: '100%' }} resizeMode="contain" />
             ) : (
-              <View style={{ width, height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F5F5' }}>
-                <Ionicons name="shirt-outline" size={80} color={Colors.border} />
+              <View style={{ width: width - 40, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="shirt-outline" size={80} color="#DDD" />
               </View>
             )}
-            
             {tryOnResult && (
-              <Image source={{ uri: tryOnResult }} style={{ width, height: '100%' }} resizeMode="cover" />
+              <Image source={{ uri: tryOnResult }} style={{ width: width - 40, height: '100%' }} resizeMode="contain" />
             )}
           </ScrollView>
-
-          {/* Side dots pagination */}
           {tryOnResult && (
-            <View style={styles.sideDots}>
+            <View style={styles.dotsRow}>
               {[0, 1].map(i => (
-                <View
-                  key={i}
-                  style={[
-                    styles.sideDot,
-                    activeIndex === i && styles.sideDotActive,
-                  ]}
-                />
+                <View key={i} style={[styles.dot, activeIndex === i && styles.dotActive]} />
               ))}
             </View>
           )}
-
-          <LinearGradient
-            colors={['transparent', 'rgba(255,255,255,1)']}
-            style={styles.imageBottomGradient}
-          />
-
-          {/* ── Floating Try-On/Save Button ── */}
-          <View style={styles.floatingAction}>
-            <TouchableOpacity 
-              activeOpacity={0.8}
-              disabled={tryOnLoading}
-              onPress={async () => {
-                if (tryOnResult && activeIndex === 1) {
-                  if (!userId) {
-                    alert('Please log in to save looks.');
-                    return;
-                  }
-                  try {
-                    const outfitName = item.name ? `Try-On: ${item.name}` : 'Virtual Try-On Look';
-                    const res = await fetch(`${BACKEND_URL}/api/outfits`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ 
-                        userId, 
-                        name: outfitName, 
-                        occasion: 'Virtual Try-On', 
-                        aiGenerated: true, 
-                        imageUrl: tryOnResult 
-                      }),
-                    });
-                    const d = await res.json();
-                    if (d.success) {
-                      alert('✨ Look saved to your Outfits!');
-                    } else {
-                      alert('Failed to save look.');
-                    }
-                  } catch (e) {
-                    alert('Network error while saving look.');
-                  }
-                  return;
-                }
-
-                let currentAvatar = userAvatar;
-                if (!currentAvatar) {
-                  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [3, 4], quality: 0.8 });
-                  if (result.canceled || !result.assets[0]) return;
-                  setTryOnLoading(true);
-                  try {
-                    const formData = new FormData();
-                    formData.append('image', { uri: result.assets[0].uri, type: 'image/jpeg', name: 'avatar.jpg' } as any);
-                    const uploadRes = await fetch(`${BACKEND_URL}/api/upload`, { method: 'POST', body: formData });
-                    const uploadData = await uploadRes.json();
-                    if (!uploadData.success) { alert('Photo upload failed. Please try again.'); setTryOnLoading(false); return; }
-                    await fetch(`${BACKEND_URL}/api/user/${userId}/avatar`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatarUrl: uploadData.url }) });
-                    currentAvatar = uploadData.url;
-                    setUserAvatar(currentAvatar);
-                    const updatedUser = { ...user, avatar: currentAvatar };
-                    await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-                    setUser(updatedUser);
-                  } catch (e) {
-                    alert('Upload failed. Check your connection.'); setTryOnLoading(false); return;
-                  }
-                } else {
-                  setTryOnLoading(true);
-                }
-                
-                try {
-                  const itemImageUrl = item.imageUrl || item.image?.uri || (typeof item.image === 'string' ? item.image : null);
-                  if (!itemImageUrl) { alert('This item has no image available to try on.'); setTryOnLoading(false); return; }
-                  const res = await fetch(`${BACKEND_URL}/api/try-on`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ garm_img: itemImageUrl, human_img: currentAvatar, description: `${item.color || ''} ${item.name}`, category: item.category }) });
-                  const data = await res.json();
-                  if (data.success && data.url) {
-                    setTryOnResult(data.url);
-                    setTimeout(() => {
-                      scrollViewRef.current?.scrollTo({ x: width, animated: true });
-                      setActiveIndex(1);
-                    }, 500);
-                  } else {
-                    alert(data.error || 'Try-on failed. Please try again.');
-                  }
-                } catch (e) {
-                  alert('Network error. Make sure the server is running.');
-                } finally {
-                  setTryOnLoading(false);
-                }
-              }}
-            >
-              <BlurView intensity={60} tint="dark" style={styles.floatingActionBlur}>
-                <Ionicons name="sparkles" size={16} color="#fff" />
-                <Text style={styles.floatingActionText}>
-                  {tryOnResult && activeIndex === 1 ? 'SAVE LOOK' : 'TRY ON'}
-                </Text>
-              </BlurView>
-            </TouchableOpacity>
-          </View>
         </View>
 
-        {/* ── Floating Header ── */}
-        <View style={styles.floatingHeader}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} activeOpacity={0.7}>
-            <BlurView intensity={80} tint="light" style={styles.headerBtnBlur}>
-              <Ionicons name="arrow-back" size={22} color="#000" />
-            </BlurView>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => setFav(!fav)} activeOpacity={0.7}>
-            <BlurView intensity={80} tint="light" style={styles.headerBtnBlur}>
-              <Ionicons
-                name={fav ? 'heart' : 'heart-outline'}
-                size={22}
-                color={fav ? '#000' : '#000'}
-              />
-            </BlurView>
+        {/* ── Name + Heart ── */}
+        <View style={styles.nameRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.itemName} numberOfLines={2}>{item.name || 'Fashion Item'}</Text>
+            <Text style={styles.itemBrand}>{item.brand || item.source || 'Personal Closet'}</Text>
+          </View>
+          <TouchableOpacity style={styles.glassCircle} onPress={() => setFav(!fav)}>
+            <Ionicons name={fav ? 'heart' : 'heart-outline'} size={20} color={fav ? '#FF3B30' : '#888'} />
           </TouchableOpacity>
         </View>
-
-        {/* ── Product info ── */}
-        <View style={styles.infoSection}>
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>{item.category?.toUpperCase() || 'GENERAL'}</Text>
-          </View>
-          <Text style={styles.productName} numberOfLines={2}>
-            {item.name ? item.name.toUpperCase() : 'UNKNOWN ITEM'}
-          </Text>
-          <Text style={styles.productBrand}>{item.brand || 'Personal Archive'}</Text>
-        </View>
-
-        {/* ── Size selector ── */}
-        <View style={styles.sizeSection}>
-          <Text style={styles.sizeLabel}>SELECT SIZE</Text>
-          <View style={styles.sizeRow}>
-            {SIZES.map(size => (
-              <TouchableOpacity
-                key={size}
-                style={[
-                  styles.sizeBtn,
-                  selectedSize === size && styles.sizeBtnActive,
-                  size === 'M' && styles.sizeBtnMid,
-                ]}
-                onPress={() => setSelectedSize(size)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.sizeBtnText, selectedSize === size && styles.sizeBtnTextActive]}>
-                  {size}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Description ── */}
-        <View style={styles.descSection}>
-          <Text style={styles.descLabel}>DESCRIPTION</Text>
-          <Text style={styles.descText}>
-            The {item.name} is a wardrobe essential. Crafted for everyday wear with a focus on quality and versatility. Pairs effortlessly with any look in your closet.
-          </Text>
-        </View>
-
-        {/* ── Details ── */}
-        <View style={styles.detailsSection}>
-          <Text style={styles.detailsLabel}>DETAILS</Text>
-          <View style={styles.detailsCard}>
-            {[
-              { label: 'Brand / Source', value: item.brand || item.source || 'Unknown' },
-              { label: 'Price', value: item.price || 'N/A' },
-              { label: 'Category', value: item.category || 'Unknown' },
-              { label: 'Color', value: item.color || 'Unknown' },
-              { label: 'Times Worn', value: `${item.wearCount || 0}×` },
-            ].map((d, i, arr) => (
-              <View key={d.label} style={[styles.detailRow, i < arr.length - 1 && styles.detailRowBorder]}>
-                <Text style={styles.detailLabel}>{d.label}</Text>
-                <Text style={styles.detailValue}>{d.value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Tags ── */}
-        {item.tags && item.tags.length > 0 && (
-          <View style={styles.tagsSection}>
-            <Text style={styles.tagsLabel}>TAGS</Text>
-            <View style={styles.tagsList}>
-              {item.tags.map((tag: string) => (
-                <View key={tag} style={styles.tagPill}>
-                  <Text style={styles.tagText}>{tag.toUpperCase()}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ── Used in outfits ── */}
-        {outfitsWithItem.length > 0 && (
-          <View style={styles.outfitsSection}>
-            <Text style={styles.outfitsLabel}>USED IN {outfitsWithItem.length} OUTFIT{outfitsWithItem.length > 1 ? 'S' : ''}</Text>
-            {outfitsWithItem.map((o, i) => (
-              <TouchableOpacity
-                key={o.id}
-                style={[styles.outfitRow, i > 0 && styles.outfitRowBorder]}
-                onPress={() => router.push({ pathname: '/outfit-detail', params: { id: o.id } })}
-                activeOpacity={0.7}
-              >
-                <View style={styles.outfitRowLeft}>
-                  <View style={styles.outfitRowImages}>
-                    {OUTFITS.find(oo => oo.id === o.id)?.items.slice(0, 2).map(itemId => {
-                      const piece = CLOTHING_ITEMS.find(c => c.id === itemId);
-                      return piece ? (
-                        <View key={itemId} style={styles.outfitImageWrap}>
-                          <Image source={piece.image} style={styles.outfitImage} resizeMode="cover" />
-                        </View>
-                      ) : null;
-                    })}
-                  </View>
-                  <View>
-                    <Text style={styles.outfitRowName}>{o.name.toUpperCase()}</Text>
-                    <Text style={styles.outfitRowOcc}>{o.occasion}</Text>
-                  </View>
-                </View>
-                <View style={styles.outfitRowRight}>
-                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Bottom spacer */}
-        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Bottom Action Bar ── */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.buyBtn}
+          activeOpacity={0.8}
+          disabled={tryOnLoading}
+          onPress={async () => {
+            if (tryOnResult && activeIndex === 1) {
+              if (!userId) { alert('Please log in.'); return; }
+              try {
+                const res = await fetch(`${BACKEND_URL}/api/outfits`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId, name: `Try-On: ${item.name}`, occasion: 'Virtual Try-On', aiGenerated: true, imageUrl: tryOnResult }),
+                });
+                const d = await res.json();
+                alert(d.success ? '✨ Look saved!' : 'Failed to save.');
+              } catch { alert('Network error.'); }
+              return;
+            }
+            const storedUserStr = await AsyncStorage.getItem('user');
+            const freshUser = storedUserStr ? JSON.parse(storedUserStr) : null;
+            if (!freshUser?.digitalTwinUrl) { alert('Create a Digital Twin in Profile first!'); return; }
+            setTryOnLoading(true);
+            try {
+              const itemImageUrl = item.transparentImageUrl || item.imageUrl || item.image?.uri;
+              if (!itemImageUrl) { alert('No image available.'); setTryOnLoading(false); return; }
+              router.push({ pathname: '/dressing-room', params: { itemData: JSON.stringify(item) } });
+            } catch (e) { alert('Try-on failed.'); console.error(e); }
+            finally { setTryOnLoading(false); }
+          }}
+        >
+          <Ionicons name="sparkles" size={16} color="#FFF" style={{ marginRight: 8 }} />
+          <Text style={styles.buyBtnText}>{tryOnResult && activeIndex === 1 ? 'Save Look' : 'Try On'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.cartBtn}>
+          <Ionicons name="bag-outline" size={20} color="#000" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Loading overlay */}
       {tryOnLoading && (
         <BlurView intensity={70} tint="dark" style={StyleSheet.absoluteFill}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{ width: '85%', backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 28, overflow: 'hidden', padding: 40, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', shadowColor: '#000', shadowOffset: {width:0, height:20}, shadowOpacity: 0.15, shadowRadius: 30 }}>
+            <View style={{ width: '85%', backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 28, padding: 40, alignItems: 'center' }}>
               <ActivityIndicator size="large" color="#000" />
               <Text style={{ marginTop: 24, fontSize: 16, fontWeight: '800', letterSpacing: 2, color: '#000' }}>TAILORING FIT...</Text>
-              <Text style={{ marginTop: 8, fontSize: 13, color: '#444', textAlign: 'center', lineHeight: 18 }}>AI is analyzing your avatar and fitting the garment perfectly.</Text>
+              <Text style={{ marginTop: 8, fontSize: 13, color: '#444', textAlign: 'center' }}>AI is fitting the garment perfectly.</Text>
             </View>
           </View>
         </BlurView>
@@ -419,344 +243,93 @@ export default function ItemDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#EFEFEF' },
+  scroll: { paddingBottom: 140 },
 
-  floatingHeader: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingBottom: 14,
+    backgroundColor: 'transparent',
     zIndex: 10,
   },
-  headerBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
+  headerTitle: {
+    fontSize: 15, fontWeight: '600', color: '#1A1A1A',
+    letterSpacing: 0.3,
   },
-  headerBtnBlur: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-
-  scroll: { paddingBottom: 0 },
-
-  productImageArea: {
-    width: width,
-    height: width * 1.3,
-    backgroundColor: '#F5F5F5',
-    position: 'relative',
-  },
-  imageBottomGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 100,
-  },
-  floatingAction: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    borderRadius: 30,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 20,
-  },
-  floatingActionBlur: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  floatingActionText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-  productImage: {
-    width: '100%',
-    height: '100%',
-  },
-  sideDots: {
-    position: 'absolute',
-    right: Spacing.xl,
-    top: '50%',
-    gap: 6,
-    transform: [{ translateY: -30 }],
-  },
-  sideDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: Colors.border,
-  },
-  sideDotActive: {
-    width: 5,
-    height: 18,
-    borderRadius: 3,
-    backgroundColor: Colors.accent,
+  glassCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
 
-  infoSection: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
+  imageCard: {
+    marginHorizontal: 20, marginTop: 4,
+    height: width * 1.1,
+    backgroundColor: '#E3E3E3',
+    borderRadius: 32, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06, shadowRadius: 16, elevation: 3,
   },
-  tag: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#000',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginBottom: 8,
+  dotsRow: {
+    position: 'absolute', bottom: 18,
+    left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
-  tagText: {
-    fontSize: 10,
-    color: '#FFF',
-    fontWeight: '900',
-    letterSpacing: 2,
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.12)' },
+  dotActive: { width: 22, backgroundColor: '#1A1A1A', borderRadius: 4 },
+
+  nameRow: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    paddingHorizontal: 28, paddingTop: 28, marginBottom: 4, gap: 12,
   },
-  productName: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#000',
-    letterSpacing: 0.5,
-    lineHeight: 32,
+  itemName: {
+    fontSize: 20, fontWeight: '700', color: '#111',
+    letterSpacing: -0.4, lineHeight: 26, marginBottom: 6,
   },
-  productBrand: {
-    fontSize: 14,
-    color: '#999',
-    fontWeight: '600',
-    marginTop: 4,
+  itemBrand: {
+    fontSize: 13, fontWeight: '500', color: '#999',
+    letterSpacing: 0.2,
   },
 
-  sizeSection: {
-    marginTop: Spacing['2xl'],
-    paddingHorizontal: Spacing['2xl'],
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 18,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 22,
+    backgroundColor: 'rgba(239,239,239,0.92)',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.6)',
+    gap: 10,
   },
-  sizeLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-    marginBottom: Spacing.md,
+  buyBtn: {
+    flex: 1, flexDirection: 'row',
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 17, borderRadius: 30,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25, shadowRadius: 20, elevation: 10,
   },
-  sizeRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  sizeBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-  },
-  sizeBtnActive: {
-    borderColor: Colors.accent,
-    borderWidth: 2,
-  },
-  sizeBtnMid: {
-    backgroundColor: Colors.accent + '08',
-  },
-  sizeBtnText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-  },
-  sizeBtnTextActive: {
-    color: Colors.accent,
-    fontWeight: FontWeight.black,
-  },
-
-  descSection: {
-    marginTop: Spacing['2xl'],
-    paddingHorizontal: Spacing['2xl'],
-  },
-  descLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-    marginBottom: Spacing.md,
-  },
-  descText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    lineHeight: 24,
-    fontWeight: FontWeight.regular,
-  },
-
-  detailsSection: {
-    marginTop: Spacing['2xl'],
-    paddingHorizontal: Spacing['2xl'],
-  },
-  detailsLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-    marginBottom: Spacing.md,
-  },
-  detailsCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-  },
-  detailRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  detailLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
-    fontWeight: FontWeight.regular,
-  },
-  detailValue: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-    textTransform: 'capitalize',
-  },
-
-  tagsSection: {
-    marginTop: Spacing['2xl'],
-    paddingHorizontal: Spacing['2xl'],
-  },
-  tagsLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-    marginBottom: Spacing.md,
-  },
-  tagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  tagPill: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.backgroundAlt,
-  },
-  tagText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
+  buyBtnText: {
+    color: '#FFF', fontSize: 15, fontWeight: '700',
     letterSpacing: 0.5,
   },
+  cartBtn: {
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
 
-  outfitsSection: {
-    marginTop: Spacing['2xl'],
-    marginHorizontal: Spacing['2xl'],
-    marginBottom: Spacing['2xl'],
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-    backgroundColor: Colors.surface,
-  },
-  outfitsLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.5,
-    padding: Spacing.lg,
-    backgroundColor: Colors.backgroundAlt,
-  },
-  outfitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.lg,
-    backgroundColor: Colors.surface,
-  },
-  outfitRowBorder: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-  },
-  outfitRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    flex: 1,
-  },
-  outfitRowImages: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-  },
-  outfitImageWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.xs,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  outfitImage: {
-    width: '100%',
-    height: '100%',
-  },
-  outfitRowName: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-    letterSpacing: 0.5,
-  },
-  outfitRowOcc: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  outfitRowRight: {},
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xl,
-    fontWeight: FontWeight.bold,
-  },
-  backBtn: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  backBtnText: {
-    color: '#fff',
-    fontWeight: FontWeight.black,
-    fontSize: FontSize.sm,
-    letterSpacing: 1,
-  },
+  centered: { alignItems: 'center', justifyContent: 'center' },
+  errorText: { fontSize: 14, color: '#888', marginTop: 12, marginBottom: 20, fontWeight: '600' },
+  backBtn: { backgroundColor: '#1A1A1A', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 },
+  backBtnText: { color: '#FFF', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
 });

@@ -19,7 +19,7 @@ const getBackendUrl = () => {
 
 export default function AddItemScreen() {
   const [step, setStep] = useState<'IDLE' | 'ANALYZING' | 'DONE'>('IDLE');
-  const [extractedItems, setExtractedItems] = useState<{url: string, tags: any}[]>([]);
+  const [extractedItems, setExtractedItems] = useState<{url: string, tags: any, pHash?: string, transparentImageUrl?: string, isDuplicate?: boolean}[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -63,19 +63,32 @@ export default function AddItemScreen() {
       const storedUser = await AsyncStorage.getItem('user');
       const currentUserId = storedUser ? JSON.parse(storedUser).id : 'anonymous';
 
+      const targetUrl = `${BACKEND_URL}/api/clothes/extract`;
+      console.log(`🎯 EXTRACTION REQUEST → ${targetUrl}`);
+      console.log(`   User: ${currentUserId}`);
+
+      const fileUri = Platform.OS === 'android' && !localUri.startsWith('file://') ? `file://${localUri}` : localUri;
+
       const formData = new FormData();
       formData.append('image', {
-        uri: localUri,
+        uri: fileUri,
         name: 'messy_photo.jpg',
         type: 'image/jpeg',
       } as any);
       formData.append('userId', currentUserId);
 
-      const res = await fetch(`${BACKEND_URL}/api/clothes/extract`, {
+      // 90 second timeout for complex generations
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+      const res = await fetch(targetUrl, {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
+      console.log(`📥 Response status: ${res.status}`);
       const data = await res.json();
 
       // Handle rate limiting
@@ -87,11 +100,24 @@ export default function AddItemScreen() {
 
       if (!data.success) throw new Error(data.error);
 
-      setExtractedItems(data.items || []);
+      const items = data.items || [];
+      const hasDuplicate = items.some((i: any) => i.isDuplicate);
+      if (hasDuplicate) {
+        Alert.alert(
+          '⚡ Instant Match',
+          'We found this exact item in your closet already! We pulled it from your cache instantly to save time.'
+        );
+      }
+
+      setExtractedItems(items);
       setCurrentIndex(0);
       setStep('DONE');
     } catch (error: any) {
-      Alert.alert('AI Error', 'Extraction failed: ' + error.message);
+      const msg = error.name === 'AbortError' 
+        ? 'Request timed out (60s). Check backend terminal for errors.'
+        : error.message;
+      console.log(`❌ Extraction Error: ${msg}`);
+      Alert.alert('AI Error', 'Extraction failed: ' + msg);
       setStep('IDLE');
     }
   };
@@ -105,7 +131,15 @@ export default function AddItemScreen() {
       const userId = storedUser ? JSON.parse(storedUser).id : null;
       if (!userId) throw new Error('Not logged in');
 
+      let savedCount = 0;
+      let duplicateCount = 0;
+
       for (const item of extractedItems) {
+        if (item.isDuplicate) {
+          duplicateCount++;
+          continue; // Skip saving, it's already in the DB
+        }
+
         const saveRes = await fetch(`${BACKEND_URL}/api/clothes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -115,16 +149,28 @@ export default function AddItemScreen() {
             category: item.tags.category,
             color: item.tags.color,
             brand: item.tags.brand,
-            imageUrl: item.url,
+            imageUrl: item.url, // Legacy display
+            transparentImageUrl: item.transparentImageUrl || item.url, // System 1 Storage
+            pHash: item.pHash, // System 2 Detection
             tags: ['ai-extracted'],
           }),
         });
         const saveData = await saveRes.json();
-        if (!saveData.success) throw new Error(saveData.error);
+        if (!saveData.success) {
+          // If backend caught a duplicate we missed
+          if (saveRes.status === 409) duplicateCount++;
+          else throw new Error(saveData.error);
+        } else {
+          savedCount++;
+        }
       }
 
-      Alert.alert('Added ✓', `Saved ${extractedItems.length} item(s) to your closet!`, [
-        { text: 'Done', onPress: () => router.back() }
+      const msg = savedCount > 0 
+        ? `Saved ${savedCount} new item(s) to your closet!`
+        : `All items were already in your closet.`;
+
+      Alert.alert('Done ✓', msg, [
+        { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Something went wrong.');
@@ -199,7 +245,7 @@ export default function AddItemScreen() {
                     <Image source={{ uri: item.url }} style={styles.previewImage} />
                     <View style={styles.aiBadge}>
                       <Ionicons name="sparkles" size={14} color="#FFF" />
-                      <Text style={styles.aiBadgeText}>AI EXTRACTED</Text>
+                      <Text style={styles.aiBadgeText}>{item.isDuplicate ? 'CACHED' : 'AI EXTRACTED'}</Text>
                     </View>
                   </View>
 

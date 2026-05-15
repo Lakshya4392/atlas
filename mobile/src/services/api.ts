@@ -25,6 +25,8 @@ export interface User {
   streak: number;
   level: string;
   avatar?: string;
+  occupation?: string;
+  wearPreference?: string;
   createdAt: string;
 }
 
@@ -89,6 +91,13 @@ export const wardrobeAPI = {
     return data.items;
   },
 
+  getFashionFeed: async (userId: string): Promise<any[]> => {
+    const response = await fetch(`${API_BASE_URL}/fashion/feed/${userId}`);
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Failed to fetch feed');
+    return data.data;
+  },
+
   addItem: async (item: {
     userId: string;
     name: string;
@@ -125,6 +134,7 @@ export const outfitsAPI = {
     itemIds: string[];
     aiGenerated?: boolean;
     weather?: string;
+    imageUrl?: string;
   }): Promise<Outfit> => {
     const response = await fetch(`${API_BASE_URL}/outfits`, {
       method: 'POST',

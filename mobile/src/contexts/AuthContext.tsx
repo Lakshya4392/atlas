@@ -82,6 +82,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       dispatch({ type: 'LOGIN_START' });
       const user = await authAPI.login(email, password);
       await AsyncStorage.setItem('user', JSON.stringify(user));
+      if (user.occupation || user.wearPreference) {
+        await AsyncStorage.setItem('onboardingCompleted', 'true');
+      }
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
     } catch (error: any) {
       dispatch({ type: 'LOGIN_FAILURE', payload: error.message });

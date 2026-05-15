@@ -1,5 +1,5 @@
 /**
- * Alta Daily — Premium fashion wardrobe app
+ * Fashion X — Premium fashion wardrobe app
  * Design System: Minimalist luxury, Scandinavian warmth
  */
 
@@ -111,8 +111,10 @@ export const BorderRadius = {
 };
 
 export const FontSize = {
-  xs: 10,
-  sm: 12,
+  '3xs': 8,
+  '2xs': 10,
+  xs: 12,
+  sm: 14,
   md: 14,
   lg: 16,
   xl: 18,

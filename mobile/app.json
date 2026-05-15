@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Alta Daily",
-    "slug": "alta-daily",
-    "version": "1.0.0",
+    "name": "Veyra",
+    "slug": "veyra",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "alta-daily",
+    "scheme": "veyra",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.altadaily.app"
+      "bundleIdentifier": "com.veyra.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
         "backgroundColor": "#0A0A0F"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.altadaily.app"
+      "package": "com.veyra.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -35,13 +35,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Alta Daily to access your camera to photograph clothing items."
+          "cameraPermission": "Allow Veyra to access your camera to photograph clothing items."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Alta Daily to access your photos to add clothing items."
+          "photosPermission": "Allow Veyra to access your photos to add clothing items."
         }
       ]
     ]

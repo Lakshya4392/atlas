@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Switch, Dimensions, Image, ActivityIndicator, Platform
+  TouchableOpacity, Switch, Dimensions, Image, ActivityIndicator, Platform, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
@@ -26,11 +27,12 @@ export default function ProfileScreen() {
   const [weather, setWeather] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
+  const [twinModalVisible, setTwinModalVisible] = useState(false);
   const [stats, setStats] = useState({ clothesCount: 0, outfitsCount: 0, favoritesCount: 0, streak: 0, level: 'Style Explorer', style: 'Minimalist' });
 
   const BACKEND_URL = getBackendUrl();
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchUser = async () => {
       const stored = await AsyncStorage.getItem('user');
       if (stored) {
@@ -52,16 +54,19 @@ export default function ProfileScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [3, 4],
+      aspect: [1, 1],
       quality: 0.8,
     });
 
     if (!result.canceled && result.assets[0]) {
       setUploading(true);
       try {
+        const localUri = result.assets[0].uri;
+        const fileUri = Platform.OS === 'android' && !localUri.startsWith('file://') ? `file://${localUri}` : localUri;
+
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: fileUri,
           type: 'image/jpeg',
           name: 'avatar.jpg',
         } as any);
@@ -93,369 +98,408 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleGenerateAvatar = async () => {
-    setUploading(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/generate-avatar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gender: 'fashion model' })
-      });
-      const data = await res.json();
-      
-      if (data.success) {
-        const updateRes = await fetch(`${BACKEND_URL}/api/user/${user.id}/avatar`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ avatarUrl: data.url }),
+  const handleGenerateDigitalTwin = async () => {
+    if (user?.digitalTwinUrl) {
+      setTwinModalVisible(true);
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setUploading(true);
+      try {
+        const localUri = result.assets[0].uri;
+        const fileUri = Platform.OS === 'android' && !localUri.startsWith('file://') ? `file://${localUri}` : localUri;
+
+        const formData = new FormData();
+        formData.append('image', {
+          uri: fileUri,
+          type: 'image/jpeg',
+          name: 'twin.jpg',
+        } as any);
+
+        const res = await fetch(`${BACKEND_URL}/api/user/${user.id}/digital-twin`, {
+          method: 'POST',
+          body: formData,
         });
-        const updateData = await updateRes.json();
-        if (updateData.success) {
-          const newUser = { ...user, avatar: data.url };
+        const data = await res.json();
+        
+        if (data.success) {
+          const newUser = { ...user, digitalTwinUrl: data.twinUrl };
           await AsyncStorage.setItem('user', JSON.stringify(newUser));
           setUser(newUser);
+          alert('Digital Twin generated successfully!');
+        } else {
+          alert('Failed to generate Digital Twin: ' + data.error);
         }
-      } else {
-        alert('Failed to generate avatar: ' + data.error);
+      } catch (e) {
+        console.error('Twin generation error:', e);
+        alert('Network error while generating Digital Twin.');
+      } finally {
+        setUploading(false);
       }
-    } catch (e) {
-      console.error('Avatar generation error:', e);
-      alert('Network error while generating avatar.');
-    } finally {
-      setUploading(false);
     }
   };
 
+  const MenuItem = ({ icon, label, onPress, isSwitch, switchValue, onSwitchChange, customColor }: any) => (
+    <View>
+      <TouchableOpacity 
+        style={styles.menuItem} 
+        onPress={onPress} 
+        activeOpacity={isSwitch ? 1 : 0.7}
+        disabled={isSwitch}
+      >
+        <View style={styles.menuItemLeft}>
+          <Ionicons name={icon} size={22} color={customColor || "#000"} />
+          <Text style={[styles.menuItemText, customColor && { color: customColor }]}>{label}</Text>
+        </View>
+        
+        {isSwitch ? (
+          <Switch 
+            value={switchValue} 
+            onValueChange={onSwitchChange} 
+            trackColor={{ false: '#EAEAEA', true: '#000' }} 
+            thumbColor="#fff" 
+          />
+        ) : (
+          <Ionicons name="chevron-forward" size={16} color="#CCC" />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      
+      {/* ── Top Header ── */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={styles.headerBtnPlaceholder} />
+      </View>
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Profile</Text>
-          <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.8}>
-            <Ionicons name="settings-outline" size={24} color="#000" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Premium Hero Profile ── */}
-        <View style={styles.profileHero}>
-          <View style={styles.avatarMain}>
+        
+        {/* ── Profile Info ── */}
+        <View style={styles.profileSection}>
+          <TouchableOpacity style={styles.avatarContainer} onPress={handleUpdateAvatar}>
             {user?.avatar ? (
               <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
             ) : (
-              <Text style={styles.avatarInitials}>{user?.name?.charAt(0) || 'A'}</Text>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitials}>{user?.name?.charAt(0) || 'U'}</Text>
+              </View>
             )}
-          </View>
-          <Text style={styles.profileName}>{user?.name || 'Your Name'}</Text>
-          <Text style={styles.profileMeta}>{stats.level} • {stats.streak} Day Streak</Text>
-        </View>
-
-        {/* ── Seamless Stats Row ── */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.clothesCount}</Text>
-            <Text style={styles.statLabel}>PIECES</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.outfitsCount}</Text>
-            <Text style={styles.statLabel}>OUTFITS</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.favoritesCount}</Text>
-            <Text style={styles.statLabel}>FAVORITES</Text>
-          </View>
-        </View>
-
-        {/* ── VIP AI Try-On Card ── */}
-        <View style={styles.aiCard}>
-          <View style={styles.aiCardLeft}>
-            <Text style={styles.aiCardTitle}>Digital Try-On Avatar</Text>
-            <Text style={styles.aiCardSub}>Upload a photo or generate an AI model to try on outfits.</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <TouchableOpacity style={[styles.aiUploadBtn, { flex: 1, marginTop: 0 }]} onPress={handleUpdateAvatar} disabled={uploading}>
-                {uploading ? (
-                  <ActivityIndicator color="#000" size="small" />
-                ) : (
-                  <Text style={styles.aiUploadBtnText}>{user?.avatar ? 'UPDATE' : 'UPLOAD'}</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.aiUploadBtn, { flex: 1, marginTop: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#000' }]} onPress={handleGenerateAvatar} disabled={uploading}>
-                {uploading ? (
-                  <ActivityIndicator color="#000" size="small" />
-                ) : (
-                  <Text style={[styles.aiUploadBtnText, { color: '#000' }]}>GENERATE</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.aiCardRight}>
-            {user?.avatar ? (
-               <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
-            ) : (
-               <Ionicons name="body-outline" size={32} color="#FFF" />
+            {uploading && (
+              <View style={styles.uploadingOverlay}>
+                <ActivityIndicator size="small" color="#FFF" />
+              </View>
             )}
-          </View>
+          </TouchableOpacity>
+          <Text style={styles.nameText}>{user?.name || 'User'}</Text>
+          <Text style={styles.emailText}>{user?.email || '@fashion.twin'}</Text>
         </View>
 
-        {/* ── Minimalist Menu Lists ── */}
-        <View style={styles.listSection}>
-          <Text style={styles.listSectionTitle}>EXPLORE</Text>
-          <View style={styles.listBlock}>
-            {[
-              { icon: 'heart-outline', label: 'Wishlist', route: '/wishlist' },
-              { icon: 'images-outline', label: 'Inspo Feed', route: '/inspo' },
-              { icon: 'airplane-outline', label: 'Trips', route: '/trip-planner' },
-              { icon: 'calendar-outline', label: 'History', route: '/calendar-log' },
-            ].map((item, i, arr) => (
-              <View key={i}>
-                <TouchableOpacity style={styles.listRow} onPress={() => router.push(item.route)} activeOpacity={0.7}>
-                  <View style={styles.listRowLeft}>
-                    <Ionicons name={item.icon as any} size={22} color="#000" />
-                    <Text style={styles.listRowText}>{item.label}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
-                </TouchableOpacity>
-                {i < arr.length - 1 && <View style={styles.listDivider} />}
+        {/* ── Main White Menu Card ── */}
+        
+        {/* Standalone Digital Twin Banner */}
+        <TouchableOpacity style={styles.standaloneTwinBanner} onPress={handleGenerateDigitalTwin} activeOpacity={0.9}>
+          <LinearGradient
+            colors={['#111111', '#333333']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.twinBannerContent}>
+            <View style={styles.twinBannerLeft}>
+              <Ionicons name="sparkles" size={24} color="#FFF" />
+              <View style={{ marginLeft: 12 }}>
+                <Text style={styles.twinBannerTitle}>VEYRA DIGITAL TWIN</Text>
+                <Text style={styles.twinBannerSub}>{user?.digitalTwinUrl ? 'View your AI Twin' : 'Create your AI Twin'}</Text>
               </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.listSection}>
-          <Text style={styles.listSectionTitle}>PREFERENCES</Text>
-          <View style={styles.listBlock}>
-            <View style={styles.listRow}>
-              <View style={styles.listRowLeft}>
-                <Ionicons name="notifications-outline" size={22} color="#000" />
-                <Text style={styles.listRowText}>Daily Reminders</Text>
-              </View>
-              <Switch value={notifs} onValueChange={setNotifs} trackColor={{ false: '#EEE', true: '#000' }} thumbColor="#fff" />
             </View>
-            <View style={styles.listDivider} />
-            <View style={styles.listRow}>
-              <View style={styles.listRowLeft}>
-                <Ionicons name="partly-sunny-outline" size={22} color="#000" />
-                <Text style={styles.listRowText}>Weather Insights</Text>
-              </View>
-              <Switch value={weather} onValueChange={setWeather} trackColor={{ false: '#EEE', true: '#000' }} thumbColor="#fff" />
+            <View style={[styles.arrowCircle, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Ionicons name="arrow-forward" size={14} color="#FFF" />
             </View>
           </View>
+        </TouchableOpacity>
+
+        {/* Card 1: Features */}
+        <View style={styles.menuCard}>
+          <MenuItem icon="shirt-outline" label={`Wardrobe Stats (${stats.clothesCount} items)`} onPress={() => {}} />
+          <MenuItem icon="images-outline" label="Inspiration Feed" onPress={() => router.push('/inspo')} />
         </View>
 
-        <View style={styles.listSection}>
-          <View style={styles.listBlock}>
-            <TouchableOpacity style={styles.listRow} onPress={() => router.replace('/onboarding')} activeOpacity={0.7}>
-              <View style={styles.listRowLeft}>
-                <Ionicons name="log-out-outline" size={22} color="#FF3B30" />
-                <Text style={[styles.listRowText, { color: '#FF3B30' }]}>Sign Out</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
+        {/* Card 2: Preferences */}
+        <View style={styles.menuCard}>
+          <MenuItem icon="notifications-outline" label="Daily Reminders" isSwitch switchValue={notifs} onSwitchChange={setNotifs} />
+          <MenuItem icon="partly-sunny-outline" label="Weather Insights" isSwitch switchValue={weather} onSwitchChange={setWeather} />
         </View>
 
-        <Text style={styles.versionText}>ALTA DAILY · v1.0.0</Text>
+        {/* Card 3: Support & Logout */}
+        <View style={styles.menuCard}>
+          <MenuItem icon="help-circle-outline" label="FAQ & Support" onPress={() => {}} />
+          <MenuItem 
+            icon="log-out-outline" 
+            label="Sign Out" 
+            onPress={async () => {
+              await AsyncStorage.removeItem('user');
+              router.replace('/login');
+            }} 
+            customColor="#FF3B30"
+          />
+        </View>
+
+        <Text style={styles.versionText}>VEYRA · v1.0.0</Text>
       </ScrollView>
+
+      {/* ── Twin Modal ── */}
+      <Modal visible={twinModalVisible} transparent={true} animationType="fade">
+        <View style={styles.modalBackground}>
+          <SafeAreaView style={{ flex: 1 }}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setTwinModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={28} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Your Digital Twin</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <View style={styles.modalImageContainer}>
+              {user?.digitalTwinUrl && (
+                <Image source={{ uri: user.digitalTwinUrl }} style={styles.fullTwinImage} resizeMode="contain" />
+              )}
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { paddingBottom: 60 },
-
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F5F5F5' // Off-white premium background
+  },
+  
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#000',
-    letterSpacing: -0.5,
-  },
-  settingsBtn: {
-    padding: 4,
-  },
-
-  // Premium Hero
-  profileHero: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  avatarMain: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: '#F5F5F5',
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerBtnPlaceholder: {
+    width: 40,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  
+  scroll: { 
+    paddingBottom: 40,
+  },
+
+  // Profile Section
+  profileSection: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 32,
+  },
+  avatarContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#FFF',
+    padding: 4, // creates the white border effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
     marginBottom: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
+    position: 'relative',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
+    borderRadius: 45,
     resizeMode: 'cover',
   },
-  avatarInitials: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: '#000',
+  // Avatar
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 45,
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileName: {
+  avatarInitials: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameText: {
     fontSize: 24,
     fontWeight: '700',
     color: '#000',
     marginBottom: 4,
+    letterSpacing: -0.5,
   },
-  profileMeta: {
+  emailText: {
     fontSize: 14,
-    color: '#666',
+    color: '#888',
     fontWeight: '500',
   },
-
-  // Seamless Stats
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  statItem: {
-    alignItems: 'center',
-    width: 100,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#000',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#999',
-    marginTop: 4,
-    letterSpacing: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#EAEAEA',
-  },
-
-  // VIP AI Card
-  aiCard: {
-    backgroundColor: '#000',
+  
+  // Menu Card
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
     borderRadius: 24,
-    padding: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 24,
-    marginBottom: 40,
+    paddingVertical: 8,
+    marginBottom: 16, // Space between segmented cards
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+
+  // Standalone Twin Banner
+  standaloneTwinBanner: {
+    marginHorizontal: 20,
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
-    shadowRadius: 16,
+    shadowRadius: 20,
     elevation: 8,
   },
-  aiCardLeft: {
-    flex: 1,
-    paddingRight: 16,
-  },
-  aiCardTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  aiCardSub: {
-    color: '#999',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  aiUploadBtn: {
-    backgroundColor: '#FFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  aiUploadBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 10,
-    letterSpacing: 1,
-  },
-  aiCardRight: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#222',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-
-  // Minimalist Lists
-  listSection: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
-  },
-  listSectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#999',
-    letterSpacing: 1.5,
-    marginBottom: 12,
-    paddingLeft: 4,
-  },
-  listBlock: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  listRow: {
+  twinBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
   },
-  listRowLeft: {
+  twinBannerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
   },
-  listRowText: {
-    fontSize: 16,
+  twinBannerTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  twinBannerSub: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+
+  // Menu Item
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  menuItemText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#000',
+    color: '#1A1A1A',
+    marginLeft: 14,
   },
-  listDivider: {
+  arrowCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  divider: {
     height: 1,
-    backgroundColor: '#EAEAEA',
-    marginLeft: 58, // Align with text
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 20,
   },
 
   versionText: {
     textAlign: 'center',
-    fontSize: 10,
-    fontWeight: '800',
+    marginTop: 32,
+    fontSize: 12,
     color: '#CCC',
+    fontWeight: '600',
     letterSpacing: 2,
-    marginTop: 20,
-    marginBottom: 40,
+  },
+
+  // Modal
+  modalBackground: {
+    flex: 1,
+    backgroundColor: '#FFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalImageContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullTwinImage: {
+    width: '100%',
+    height: '100%',
   },
 });

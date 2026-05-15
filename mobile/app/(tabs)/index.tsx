@@ -1,515 +1,353 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Image, TextInput, Dimensions, Platform, ActivityIndicator, RefreshControl, Animated
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Image, TextInput, Dimensions, Platform, ActivityIndicator
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '../../constants/theme';
-import { CLOTHING_ITEMS } from '../../constants/data';
+import { wardrobeAPI, ClothingItem } from '../../src/services/api';
 
 const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 40 - 16) / 2;
 
-const getBackendUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.hostUri;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    return `http://${ip}:3000`;
-  }
-  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
-};
+const CATEGORIES = [
+  { name: 'All', icon: 'apps' },
+  { name: 'Tops', icon: 'shirt' },
+  { name: 'Bottoms', icon: 'walk' },
+  { name: 'Outerwear', icon: 'snow' },
+  { name: 'Shoes', icon: 'footsteps' },
+];
 
-const ItemCard = ({ item, index }: { item: any, index: number }) => {
-  // Staggered height effect for Pinterest style
-  const isTall = index % 3 === 0;
-  const cardHeight = isTall ? 280 : 220;
-
-  return (
-    <TouchableOpacity
-      style={[styles.itemCard, { height: cardHeight + 60 }]}
-      activeOpacity={0.85}
-      onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
-    >
-      <View style={[styles.imageContainer, { height: cardHeight }]}>
-        {item.imageUrl ? (
-          <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
-        ) : item.thumbnail ? (
-          <Image source={{ uri: item.thumbnail }} style={styles.image} resizeMode="cover" />
-        ) : item.image ? (
-          <Image source={item.image} style={styles.image} resizeMode="cover" />
-        ) : (
-          <View style={styles.placeholder}>
-            <Ionicons name="shirt-outline" size={32} color="#CCC" />
-          </View>
-        )}
-        {item.favorite && (
-          <View style={styles.favBadge}>
-            <Ionicons name="heart" size={10} color="#000" />
-          </View>
-        )}
-      </View>
-      <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>{(item.name || item.title || 'UNKNOWN').toUpperCase()}</Text>
-        <Text style={styles.brand}>{item.brand || 'No Brand'}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-const SkeletonCard = ({ index }: { index: number }) => {
-  const animValue = React.useRef(new Animated.Value(0.5)).current;
-  React.useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
-      ])
-    ).start();
-  }, []);
-
-  const isTall = index % 3 === 0;
-  const cardHeight = isTall ? 280 : 220;
-
-  return (
-    <View style={[styles.itemCard, { height: cardHeight + 60 }]}>
-      <Animated.View style={[styles.imageContainer, { height: cardHeight, backgroundColor: '#E5E5E5', opacity: animValue }]} />
-      <View style={styles.info}>
-        <Animated.View style={{ width: '80%', height: 12, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue, marginBottom: 6 }} />
-        <Animated.View style={{ width: '50%', height: 10, backgroundColor: '#E5E5E5', borderRadius: 4, opacity: animValue }} />
-      </View>
-    </View>
-  );
-};
-
-const SkeletonHero = () => {
-  const animValue = React.useRef(new Animated.Value(0.5)).current;
-  React.useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(animValue, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(animValue, { toValue: 0.5, duration: 800, useNativeDriver: true })
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <Animated.View style={[styles.heroBanner, { opacity: animValue, backgroundColor: '#E5E5E5', marginHorizontal: 20, marginBottom: 32 }]} />
-  );
-};
-
-export default function DashboardScreen() {
-  const [items, setItems] = useState<any[]>([]);
-  const [visibleCount, setVisibleCount] = useState(14);
+export default function HomeScreen() {
+  const [user, setUser] = useState<any>(null);
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [items, setItems] = useState<any[]>([]); // Using any[] since it's the live feed now
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState('');
-  const [userId, setUserId] = useState<string | null>(null);
-  const [userName, setUserName] = useState('');
-  const BACKEND_URL = getBackendUrl();
 
-  const fetchData = async (uid?: string) => {
-    const id = uid || userId;
-    if (!id) return;
-    try {
-      // Fetch from the new Personalized SerpAPI Feed instead of mock data
-      const res = await fetch(`${BACKEND_URL}/api/fashion/feed/${id}`);
-      const data = await res.json();
-      if (data.success && data.data) {
-        const seen = new Set();
-        const unique = data.data.filter((item: any) => {
-          const key = item.link || item.title || item.id;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setItems(unique);
-      } else {
-        setItems([]);
-      }
-    } catch (e) {
-      setItems([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useFocusEffect(
-    React.useCallback(() => {
-      AsyncStorage.getItem('user').then(stored => {
-        if (stored) {
-          const u = JSON.parse(stored);
-          setUserId(u.id);
-          setUserName(u.name || '');
-          fetchData(u.id);
-        } else {
-          setLoading(false);
-          setItems([]);
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const storedUser = await AsyncStorage.getItem('user');
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          // Fetch the live database feed instead of just the user's closet
+          const fetchedFeed = await wardrobeAPI.getFashionFeed(parsedUser.id);
+          setItems(fetchedFeed);
         }
+      } catch (error) {
+        console.error('Failed to load home data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const filteredItems = activeCategory === 'All' 
+    ? items 
+    : items.filter(item => {
+        const title = (item.title || '').toLowerCase();
+        if (activeCategory === 'Tops') return title.includes('shirt') || title.includes('top') || title.includes('tee') || title.includes('polo');
+        if (activeCategory === 'Bottoms') return title.includes('pant') || title.includes('jeans') || title.includes('short') || title.includes('trousers');
+        if (activeCategory === 'Shoes') return title.includes('shoe') || title.includes('sneaker') || title.includes('boot');
+        if (activeCategory === 'Outerwear') return title.includes('jacket') || title.includes('coat') || title.includes('hoodie');
+        return true;
       });
-    }, [])
-  );
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
-
-  const allFiltered = items.filter(item => {
-    const itemName = item.name || item.title || '';
-    return !query ||
-      itemName.toLowerCase().includes(query.toLowerCase()) ||
-      (item.brand && item.brand.toLowerCase().includes(query.toLowerCase()));
-  });
-  const filtered = allFiltered.slice(0, visibleCount);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
-      >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>ATLA DAILY</Text>
-          <Text style={styles.headerSub}>WARDROBE OS</Text>
-        </View>
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* ── Header ── */}
+          <View style={styles.header}>
+            <Text style={styles.logoText}>VEYRA</Text>
+          </View>
 
-        {/* ── Premium Search Bar Trigger ── */}
-        <View style={styles.searchContainer}>
-          <TouchableOpacity 
-            style={styles.searchBar} 
-            activeOpacity={0.9}
-            onPress={() => router.push('/search')}
-          >
-            <Ionicons name="search-outline" size={18} color="#999" />
-            <Text style={[styles.searchInput, { color: '#999', paddingTop: Platform.OS === 'ios' ? 0 : 2 }]}>Search brands, styles, colors...</Text>
-          </TouchableOpacity>
-        </View>
+          {/* ── Search Bar (Routes to Search) ── */}
+          <View style={styles.searchRow}>
+            <TouchableOpacity 
+              style={styles.searchContainer}
+              activeOpacity={0.8}
+              onPress={() => router.push('/search')}
+            >
+              <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+              <Text style={styles.searchPlaceholder}>Search</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* ── Hero section ── */}
-        {loading ? (
-          <SkeletonHero />
-        ) : filtered.length > 0 ? (
-          <ScrollView 
-            horizontal 
-            pagingEnabled 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.heroBannerScroll}
-          >
-            {filtered.slice(0, 5).map((item, idx) => (
-              <TouchableOpacity 
-                key={item.id || item.link || `hero-${idx}`}
-                style={[styles.heroBanner, { width: width - 40 }]} 
-                activeOpacity={0.9} 
-                onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
-              >
-                <Image 
-                  source={{ uri: item.imageUrl || item.thumbnail }} 
-                  style={styles.heroImage}
-                  resizeMode="cover"
-                />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.5)']}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <BlurView intensity={30} tint="dark" style={styles.heroOverlay}>
-                  <View style={styles.heroContent}>
-                    <Text style={styles.heroTag}>TRENDING NOW</Text>
-                    <Text style={styles.heroTitle} numberOfLines={1}>{(item.name || item.title || 'STYLE').toUpperCase()}</Text>
-                    <Text style={styles.heroSub}>{item.brand || 'Discover this piece'}</Text>
-                  </View>
-                  <View style={styles.heroBtn}>
-                    <Text style={styles.heroBtnText}>VIEW</Text>
-                  </View>
-                </BlurView>
+          {/* ── Hero Banner ── */}
+          <View style={styles.bannerContainer}>
+            <View style={styles.bannerContent}>
+              <Text style={styles.bannerTitle}>Organize closet,{'\n'}get AI styling</Text>
+              <TouchableOpacity style={styles.shopBtn} onPress={() => router.push('/ai-stylist')}>
+                <Text style={styles.shopBtnText}>Explore now</Text>
+                <Ionicons name="arrow-forward" size={14} color="#000" />
               </TouchableOpacity>
-            ))}
+            </View>
+            <Image
+              source={require('../../assets/images/banner_product.png')}
+              style={styles.bannerImage}
+              resizeMode="contain"
+            />
+          </View>
+
+          {/* ── Categories ── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesContainer}
+          >
+            {CATEGORIES.map((cat, index) => {
+              const isActive = activeCategory === cat.name;
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                  onPress={() => setActiveCategory(cat.name)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.catIconContainer, isActive && styles.catIconContainerActive]}>
+                    <Ionicons 
+                      name={cat.icon as any} 
+                      size={14} 
+                      color={isActive ? '#000' : '#888'} 
+                    />
+                  </View>
+                  <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
-        ) : null}
 
-        {/* ── Section ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>DISCOVER</Text>
-          <Text style={styles.sectionCount}>{filtered.length} CURATED PIECES</Text>
-        </View>
-
-        {/* ── Pinterest Masonry Grid ── */}
-        {loading ? (
-          <View style={styles.masonryGrid}>
-            <View style={styles.masonryColumn}>
-              {[0, 2, 4].map(idx => (
-                <SkeletonCard key={`skel-${idx}`} index={idx} />
+          {/* ── Grid Section ── */}
+          {loading ? (
+            <ActivityIndicator size="large" color="#000" style={{ marginTop: 40 }} />
+          ) : filteredItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="images-outline" size={48} color="#CCC" />
+              <Text style={styles.emptyText}>No items found in this category.</Text>
+            </View>
+          ) : (
+            <View style={styles.grid}>
+              {filteredItems.map((item, index) => (
+                <TouchableOpacity
+                  key={item.id || index.toString()}
+                  style={styles.gridItem}
+                  activeOpacity={0.9}
+                  onPress={() => router.push({ pathname: '/item-detail', params: { id: item.id } })}
+                >
+                  <View style={styles.imageWrapper}>
+                    {item.thumbnail ? (
+                      <Image source={{ uri: item.thumbnail }} style={styles.itemImage} resizeMode="cover" />
+                    ) : (
+                      <Ionicons name="shirt-outline" size={32} color="#CCC" />
+                    )}
+                    <TouchableOpacity style={styles.heartBtn}>
+                      <Ionicons name="heart-outline" size={18} color="#888" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.itemDetails}>
+                    <Text style={styles.itemBrand}>{item.brand || item.source || 'VEYRA'}</Text>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
-            <View style={styles.masonryColumn}>
-              {[1, 3, 5].map(idx => (
-                <SkeletonCard key={`skel-${idx}`} index={idx} />
-              ))}
-            </View>
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyIconBg}>
-              <Ionicons name="shirt-outline" size={40} color="#CCC" />
-            </View>
-            <Text style={styles.emptyTitle}>NO ITEMS</Text>
-            <Text style={styles.emptySub}>Your closet is empty. Add your first item.</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/add-item')}>
-              <Text style={styles.emptyBtnText}>ADD PIECE</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.masonryGrid}>
-            <View style={styles.masonryColumn}>
-              {filtered.filter((_, i) => i % 2 === 0).map((item, idx) => (
-                <ItemCard key={item.id || item.link || `col1-${idx}`} item={item} index={idx} />
-              ))}
-            </View>
-            <View style={styles.masonryColumn}>
-              {filtered.filter((_, i) => i % 2 !== 0).map((item, idx) => (
-                <ItemCard key={item.id || item.link || `col2-${idx}`} item={item} index={idx} />
-              ))}
-            </View>
-          </View>
-        )}
+          )}
 
-        {!loading && filtered.length > 0 && visibleCount < allFiltered.length && (
-          <View style={{ alignItems: 'center', marginTop: 24, paddingBottom: 24 }}>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => setVisibleCount(prev => prev + 4)}>
-              <Text style={styles.emptyBtnText}>LOAD 4 MORE</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* ── FAB ── */}
-      <TouchableOpacity 
-        style={styles.fab} 
-        onPress={() => router.push('/add-item')} 
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
-    </SafeAreaView>
+          {/* Spacer for bottom dock */}
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { paddingBottom: 120 },
-  
-  header: {
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 20,
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: 6,
-    color: '#000',
-  },
-  headerSub: {
-    fontSize: 10,
-    color: '#999',
-    fontWeight: '900',
-    marginTop: 4,
-    letterSpacing: 2,
-  },
-
-  searchContainer: {
+  scrollContent: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    paddingTop: 10,
   },
-  searchBar: {
+  header: {
+    alignItems: 'center', // Centers the logo perfectly
+    justifyContent: 'center',
+    marginBottom: 20,
+    marginTop: Platform.OS === 'ios' ? 10 : 20, // Added spacing to clear notch
+  },
+  logoText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Didot' : 'serif',
+    fontStyle: 'italic',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  searchContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    height: 48,
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, color: '#000', fontWeight: '600' },
-
-  heroBannerScroll: {
-    marginBottom: 32,
+  searchIcon: {
+    marginRight: 8,
   },
-  heroBanner: {
-    marginHorizontal: 20,
-    height: 240,
-    borderRadius: 32,
-    overflow: 'hidden',
-    ...Shadows.lg,
+  searchPlaceholder: {
+    fontSize: 16,
+    color: '#999',
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroOverlay: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
+  bannerContainer: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 20,
+    padding: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 20,
+    marginBottom: 32,
     overflow: 'hidden',
   },
-  heroContent: {
-    gap: 4,
+  bannerContent: {
     flex: 1,
-    paddingRight: 16,
+    zIndex: 1,
   },
-  heroTag: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2,
-    opacity: 0.8,
+  bannerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 16,
+    lineHeight: 32,
   },
-  heroTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 1,
+  shopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  heroSub: {
-    color: '#fff',
-    fontSize: 12,
+  shopBtnText: {
     fontWeight: '600',
+    marginRight: 6,
+  },
+  bannerImage: {
+    position: 'absolute',
+    right: -20,
+    bottom: -20,
+    width: 150,
+    height: 150,
     opacity: 0.9,
   },
-  heroBtn: {
+  categoriesContainer: {
+    marginBottom: 32,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 20,
+    marginRight: 12,
   },
-  heroBtnText: {
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+  categoryChipActive: {
+    backgroundColor: '#000',
   },
-
-  sectionHeader: {
+  catIconContainer: {
+    marginRight: 6,
+  },
+  catIconContainerActive: {},
+  categoryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  categoryTextActive: {
+    color: '#FFF',
+  },
+  grid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+  },
+  gridItem: {
+    width: (width - 60) / 2, // 2 items per row with 20px padding and 20px gap
+    marginBottom: 24,
+  },
+  imageWrapper: {
+    width: '100%',
+    height: 200, 
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    marginBottom: 12,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 1.5, color: '#000' },
-  sectionCount: { fontSize: 12, color: '#999', fontWeight: '700' },
-
-  masonryGrid: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  masonryColumn: {
-    flex: 1,
-    gap: 20,
-  },
-  itemCard: {
-    width: '100%',
-    backgroundColor: '#fff',
-  },
-  imageContainer: {
-    width: '100%',
-    borderRadius: 24,
-    backgroundColor: '#F9F9F9',
     overflow: 'hidden',
-    position: 'relative',
-    ...Shadows.sm,
   },
-  image: {
+  itemImage: {
     width: '100%',
     height: '100%',
   },
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  favBadge: {
+  heartBtn: {
     position: 'absolute',
     top: 12,
     right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
+    backgroundColor: '#FFF',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  info: {
-    paddingTop: 12,
+  itemDetails: {
     paddingHorizontal: 4,
   },
-  name: {
-    fontSize: 12,
-    fontWeight: '900',
+  itemBrand: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#000',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  brand: {
-    fontSize: 11,
+  itemPrice: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 40,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
     color: '#999',
-    fontWeight: '600',
-  },
-
-  loader: { paddingTop: 60, alignItems: 'center' },
-  empty: {
-    width: '100%',
-    alignItems: 'center',
-    paddingTop: 40,
-    gap: 12,
-  },
-  emptyIconBg: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 2 },
-  emptySub: { fontSize: 13, color: '#999', textAlign: 'center' },
-  emptyBtn: {
-    backgroundColor: '#000',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 12,
-  },
-  emptyBtnText: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
-
-  fab: {
-    position: 'absolute',
-    bottom: 40,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.md,
   },
 });
