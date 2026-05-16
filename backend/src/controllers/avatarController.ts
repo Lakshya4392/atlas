@@ -1,180 +1,175 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
 import cloudinary from '../config/cloudinary';
-import { client } from '@gradio/client';
 
 export const generateDigitalTwin = async (req: Request, res: Response) => {
   try {
     const userId = req.params.id;
-    if (!req.file) return res.status(400).json({ success: false, error: 'No image uploaded' });
     
-    console.log(`\n🧍‍♂️ ═══ AI DIGITAL TWIN GENERATION ═══`);
+    let buffer: Buffer;
+    let mimetype = 'image/jpeg';
+
+    if (req.file) {
+      buffer = req.file.buffer;
+      mimetype = req.file.mimetype;
+    } else if (req.body.image && req.body.image.startsWith('data:image')) {
+      const parts = req.body.image.split(',');
+      mimetype = parts[0].match(/:(.*?);/)[1];
+      buffer = Buffer.from(parts[1], 'base64');
+    } else {
+      return res.status(400).json({ success: false, error: 'No image uploaded' });
+    }
+    
+    console.log(`\n🧍‍♂️ ═══ AI DIGITAL TWIN GENERATION (GROQ VISION + IMGLY) ═══`);
     console.log(`   User: ${userId}`);
     
-    // Convert buffer to blob for gradio
-    const imageBlob = new Blob([new Uint8Array(req.file.buffer)], { type: req.file.mimetype });
-
-    console.log(`   📡 Connecting to Hugging Face InstantID...`);
-    
-    let avatarUrl = '';
-    let savedMasks: Record<string, string> = {};
-    
     try {
-      const hfToken = process.env.HF_TOKEN || process.env.HF_TOKEN_2 || process.env.HF_TOKEN_3;
-      if (!hfToken) throw new Error("Missing HF_TOKEN");
-
-      console.log(`   ✂️ Extracting Full Body using Segformer API...`);
-      
       const sharpModule = await import('sharp');
       const sharp = sharpModule.default;
 
-      // Log original size
-      const originalSize = (req.file.buffer.length / 1024).toFixed(2);
-      console.log(`   📸 Original Image Size: ${originalSize} KB`);
-
-      // Compress image to prevent Hugging Face payload size limit crashes (fetch failed)
-      const compressedBuffer = await sharp(req.file.buffer)
-        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
+      // STEP 1: Standardize to 3:4
+      console.log(`   📏 Standardizing image to 3:4 Portrait Ratio (768x1024)...`);
+      const processBuffer = await sharp(buffer)
+        .resize(768, 1024, { fit: 'cover', position: 'top' })
+        .jpeg({ quality: 90 })
         .toBuffer();
-        
-      const compressedSize = (compressedBuffer.length / 1024).toFixed(2);
-      console.log(`   🗜️ Compressed Image for AI: ${compressedSize} KB`);
 
-      const MAX_RETRIES = 3;
-      let segments: any[] = [];
-      let success = false;
-      let lastError = '';
-
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-         try {
-            console.log(`   📡 Calling HuggingFace API (Attempt ${attempt}/${MAX_RETRIES})...`);
-            
-            const segRes = await fetch('https://router.huggingface.co/hf-inference/models/mattmdjaga/segformer_b2_clothes', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${hfToken}`,
-                'Content-Type': 'image/jpeg',
-              },
-              body: compressedBuffer,
-            });
-
-            if (!segRes.ok) {
-              const errText = await segRes.text();
-              console.log(`   ❌ HF API Error Status: ${segRes.status} | Msg: ${errText.substring(0, 100)}`);
-              throw new Error(`API error (${segRes.status}): ${errText}`);
-            }
-
-            segments = await segRes.json() as any[];
-            if (segments && segments.length > 0) {
-               console.log(`   ✅ API Success! Found ${segments.length} body segments.`);
-               success = true;
-               break; // Success!
-            } else {
-               console.log(`   ⚠️ API Success but returned 0 segments.`);
-            }
-         } catch (err: any) {
-            lastError = err.message;
-            console.log(`   ⚠️ Attempt ${attempt} failed with error: ${lastError}`);
-            if (attempt < MAX_RETRIES) {
-                console.log(`   ⏳ Waiting 2 seconds before retry...`);
-                await new Promise(res => setTimeout(res, 2000));
-            }
-         }
+      // STEP 2: Validate with NVIDIA Vision (Llama 3.2 90B Vision)
+      console.log(`   🔍 Validating with NVIDIA Llama Vision...`);
+      const nvidiaKey = process.env.EXPO_PUBLIC_NVIDIA_API_KEY;
+      if (!nvidiaKey) {
+        throw new Error("EXPO_PUBLIC_NVIDIA_API_KEY is missing from .env");
       }
 
-      if (!success) throw new Error(`Segformer failed after ${MAX_RETRIES} attempts. Last Error: ${lastError}`);
-      
-      // Combine all segments EXCEPT background
-      const bodySegments = segments.filter(s => !s.label.toLowerCase().includes('background'));
+      // Compress for vision API (max 4MB base64)
+      const compressedBuf = await sharp(processBuffer).resize(512, 682).jpeg({ quality: 60 }).toBuffer();
+      const base64Img = compressedBuf.toString('base64');
 
-      const metadata = await sharp(req.file.buffer).metadata();
-      const width = metadata.width!;
-      const height = metadata.height!;
+      const nvidiaRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${nvidiaKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'meta/llama-3.2-90b-vision-instruct',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `You are a photo validator for a Virtual Try-On fashion app. Analyze this image and reply ONLY with valid JSON (no markdown, no code blocks).
 
-      let combinedMaskBuffer = await sharp({
-        create: { width, height, channels: 3, background: { r: 0, g: 0, b: 0 } }
-      }).png().toBuffer();
+Check:
+1. Is there a clearly visible human person?
+2. Is their face visible?
+3. Is upper body (torso) visible?
+4. Is lower body (legs/pants/skirt down to knees or below) visible?
 
-      for (const seg of bodySegments) {
-        const maskBuf = Buffer.from(seg.mask, 'base64');
-        const resizedMask = await sharp(maskBuf).resize(width, height, { fit: 'fill' }).greyscale().png().toBuffer();
-        combinedMaskBuffer = await sharp(combinedMaskBuffer).composite([{ input: resizedMask, blend: 'add' as any }]).png().toBuffer();
+Reply format:
+{"hasPerson":true,"hasFace":true,"hasUpperBody":true,"hasLowerBody":true,"errorReason":""}`
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: `data:image/jpeg;base64,${base64Img}` }
+                }
+              ]
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 200,
+        })
+      });
+
+      if (!nvidiaRes.ok) {
+        const errText = await nvidiaRes.text();
+        throw new Error(`NVIDIA Vision API failed (${nvidiaRes.status}): ${errText}`);
       }
 
-      const alphaMask = await sharp(combinedMaskBuffer)
-        .greyscale()
-        .resize(width, height)
-        .blur(1.0)
-        .raw()
-        .toBuffer();
+      const nvidiaData = await nvidiaRes.json() as any;
+      const responseText = nvidiaData.choices?.[0]?.message?.content;
       
-      const originalRGBA = await sharp(req.file.buffer).resize(width, height).ensureAlpha().raw().toBuffer();
+      if (!responseText) throw new Error("Empty response from NVIDIA Vision");
+      
+      const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const validation = JSON.parse(cleanJson);
 
-      const resultRGBA = Buffer.from(originalRGBA);
-      for (let p = 0; p < alphaMask.length; p++) {
-        // If mask is dark, make pixel WHITE
-        if (alphaMask[p] < 50) {
-           resultRGBA[p * 4] = 255;     // R
-           resultRGBA[p * 4 + 1] = 255; // G
-           resultRGBA[p * 4 + 2] = 255; // B
-           resultRGBA[p * 4 + 3] = 255; // A (Opaque)
-        } else {
-           // Blend edges with white
-           const alpha = alphaMask[p] / 255;
-           const invAlpha = 1 - alpha;
-           resultRGBA[p * 4] = Math.round(resultRGBA[p * 4] * alpha + 255 * invAlpha);
-           resultRGBA[p * 4 + 1] = Math.round(resultRGBA[p * 4 + 1] * alpha + 255 * invAlpha);
-           resultRGBA[p * 4 + 2] = Math.round(resultRGBA[p * 4 + 2] * alpha + 255 * invAlpha);
-           resultRGBA[p * 4 + 3] = 255; // Always opaque
+      console.log(`   🧐 Groq Vision Result:`, validation);
+
+      if (!validation.hasPerson || !validation.hasFace || !validation.hasUpperBody) {
+         throw new Error("VALIDATION_ERROR: " + (validation.errorReason || "No clear person detected. Please upload a clear photo of yourself."));
+      }
+
+      if (!validation.hasLowerBody) {
+         throw new Error("VALIDATION_ERROR: Half-body photo detected! Please upload a full-body standing photo so you can try on outfits accurately.");
+      }
+
+      console.log(`   ✅ Pose & Body Validation Passed!`);
+
+      // STEP 3: Remove Background via HuggingFace RMBG-2.0 (cloud, no crash)
+      console.log(`   ✂️ Removing background via HF RMBG-2.0...`);
+      const hfToken = process.env.HF_TOKEN || process.env.HF_TOKEN_2 || process.env.HF_TOKEN_3;
+      if (!hfToken) throw new Error("HF_TOKEN missing in .env for background removal");
+
+      let bgRemovedBuffer: Buffer | null = null;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          const bgRes = await fetch('https://router.huggingface.co/hf-inference/models/briaai/RMBG-2.0', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${hfToken}`,
+              'Content-Type': 'image/jpeg',
+            },
+            body: processBuffer,
+          });
+          if (!bgRes.ok) {
+            const errText = await bgRes.text();
+            throw new Error(`RMBG API error (${bgRes.status}): ${errText}`);
+          }
+          bgRemovedBuffer = Buffer.from(await bgRes.arrayBuffer());
+          console.log(`   ✅ Background Removed! (${(bgRemovedBuffer.length/1024).toFixed(0)} KB)`);
+          break;
+        } catch (err: any) {
+          if (attempt < 4) {
+            console.log(`   ⏳ RMBG model warming up... (attempt ${attempt}/4)`);
+            await new Promise(r => setTimeout(r, 5000));
+          } else {
+            throw new Error(`Background removal failed: ${err.message}`);
+          }
         }
       }
 
-      const finalBodyBuffer = await sharp(resultRGBA, { raw: { width, height, channels: 4 } })
-        .jpeg({ quality: 90 }) // Save as JPEG since there's no transparency
-        .toBuffer();
+      // STEP 4: Upload transparent avatar to Cloudinary
+      console.log(`   ☁️ Uploading to Cloudinary...`);
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          { folder: 'atlas/avatars', format: 'png' },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        ).end(bgRemovedBuffer);
+      });
 
-      console.log(`   ☁️ Uploading extracted full-body twin to Cloudinary...`);
-      avatarUrl = await new Promise((resolve, reject) => {
-         cloudinary.uploader.upload_stream({ folder: 'atla_avatars' }, (error, result) => {
-            if (error || !result) return reject(error);
-            resolve(result.secure_url);
-         }).end(finalBodyBuffer);
-      }) as string;
+      const avatarUrl = uploadResult.secure_url;
+      console.log(`   ✅ Upload Done: ${avatarUrl}`);
 
-      console.log(`   ✅ Perfect Full-Body Twin with White Background extracted successfully!`);
+      // STEP 5: Save to DB
+      await prisma.user.update({
+        where: { id: userId },
+        data: { digitalTwinUrl: avatarUrl }
+      });
 
-      // ── STEP 2: Save the Segment Masks for Virtual Try-On ──
-      console.log(`   🧠 Saving exact Body Segments for Future Try-Ons...`);
-      
-      // Save specific important body parts as base64 to the DB
-      const importantLabels = ['upper-clothes', 'dress', 'pants', 'skirt', 'left-arm', 'right-arm', 'left-leg', 'right-leg', 'face', 'hair', 'left-shoe', 'right-shoe'];
-      for (const seg of segments) {
-         if (importantLabels.some(l => seg.label.toLowerCase().includes(l))) {
-             savedMasks[seg.label] = seg.mask; // base64 mask
-         }
-      }
-      
-    } catch (hfError: any) {
-      console.log(`   ⚠️ Background removal/segmentation failed: ${hfError.message}`);
-      throw new Error(`AI Segmentation failed. Please try again with a clearer photo. Error: ${hfError.message}`);
+      console.log(`   ✅ Digital Twin Complete!\n`);
+      return res.json({ success: true, twinUrl: avatarUrl });
+
+    } catch (error: any) {
+      console.error('❌ Digital Twin Error:', error.message);
+      return res.status(500).json({ success: false, error: error.message });
     }
-
-    // ── STEP 3: Save to Database ──
-    await prisma.user.update({
-      where: { id: userId as string },
-      data: {
-        digitalTwinUrl: avatarUrl,
-        bodyMasks: savedMasks,
-        poseKeypoints: { status: 'normalized', version: '1.0' }
-      }
-    });
-
-    console.log(`   ✅ Digital Twin Data fully synchronized to Database!`);
-    res.json({ success: true, twinUrl: avatarUrl, masks: savedMasks });
-
-  } catch (error: any) {
-    console.error('❌ Digital Twin Generation Error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error) {
+    console.error('❌ General Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate Digital Twin' });
   }
 };

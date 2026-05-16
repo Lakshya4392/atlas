@@ -199,7 +199,7 @@ export default function ItemDetailScreen() {
                 const res = await fetch(`${BACKEND_URL}/api/outfits`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ userId, name: `Try-On: ${item.name}`, occasion: 'Virtual Try-On', aiGenerated: true, imageUrl: tryOnResult }),
+                  body: JSON.stringify({ userId, name: item.name || 'Saved Look', occasion: 'Virtual Try-On', aiGenerated: true, imageUrl: tryOnResult }),
                 });
                 const d = await res.json();
                 alert(d.success ? '✨ Look saved!' : 'Failed to save.');

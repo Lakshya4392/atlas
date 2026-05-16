@@ -11,21 +11,24 @@ const { width, height } = Dimensions.get('window');
 const SLIDES = [
   {
     id: 1,
-    image: require('../assets/images/welcome_bg.png'),
-    title: 'Change your\nPerspective In Style',
-    subtitle: 'Experience AI-powered wardrobe management and elevate your daily appearance.',
+    image: require('../assets/images/welcome_snap.png'),
+    title: 'Snap Yourself',
+    subtitle: 'Upload a clear photo to start your\nstyle journey.',
+    button: 'Next',
   },
   {
     id: 2,
-    image: require('../assets/images/welcome_carousel_2.png'),
-    title: 'Virtual\nTry-On Magic',
-    subtitle: 'See how any outfit looks on you instantly before deciding what to wear.',
+    image: require('../assets/images/welcome_closet.png'),
+    title: 'Add Your Closet',
+    subtitle: 'Upload photos of clothes you want\nto try on.',
+    button: 'Next',
   },
   {
     id: 3,
-    image: require('../assets/images/welcome_carousel_3.png'),
-    title: 'Your Premium\nDigital Closet',
-    subtitle: 'Organize, plan, and discover perfect combinations from your own wardrobe.',
+    image: require('../assets/images/welcome_tryon.png'),
+    title: 'Try It On',
+    subtitle: 'Instantly see how each outfit looks\non you.',
+    button: 'Continue',
   },
 ];
 
@@ -33,13 +36,15 @@ export default function WelcomeScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<ScrollView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const slideUp = useRef(new Animated.Value(60)).current;
+
+  // Entrance animation
   const fadeIn = useRef(new Animated.Value(0)).current;
+  const slideUp = useRef(new Animated.Value(40)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeIn, { toValue: 1, duration: 800, delay: 400, useNativeDriver: true }),
-      Animated.spring(slideUp, { toValue: 0, damping: 20, stiffness: 100, delay: 400, useNativeDriver: true }),
+      Animated.timing(fadeIn, { toValue: 1, duration: 600, delay: 200, useNativeDriver: true }),
+      Animated.spring(slideUp, { toValue: 0, damping: 20, stiffness: 120, delay: 200, useNativeDriver: true }),
     ]).start();
   }, []);
 
@@ -53,185 +58,228 @@ export default function WelcomeScreen() {
     setCurrentIndex(newIndex);
   };
 
-  const handlePress = () => {
+  const handleNext = () => {
     if (currentIndex < SLIDES.length - 1) {
-      // Go to next slide
       scrollViewRef.current?.scrollTo({ x: (currentIndex + 1) * width, animated: true });
     } else {
-      // Go to login on last slide
       router.push('/login');
     }
   };
 
+  const handleSkip = () => {
+    router.push('/login');
+  };
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" />
 
-      {/* ── Background Carousel ── */}
-      <View style={styles.carouselContainer}>
-        <Animated.ScrollView
-          ref={scrollViewRef as any}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          bounces={false}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          onMomentumScrollEnd={onMomentumScrollEnd}
-        >
-          {SLIDES.map((slide, index) => {
-            // Slight parallax effect for background
-            const translateX = scrollX.interpolate({
-              inputRange: [(index - 1) * width, index * width, (index + 1) * width],
-              outputRange: [-width * 0.2, 0, width * 0.2],
-              extrapolate: 'clamp',
-            });
-
-            return (
-              <View key={slide.id} style={styles.slide}>
-                <Animated.Image
-                  source={slide.image}
-                  style={[styles.heroImage, { transform: [{ translateX }] }]}
-                  resizeMode="cover"
-                />
-              </View>
-            );
-          })}
-        </Animated.ScrollView>
-        <View style={styles.overlay} />
-      </View>
-
-      {/* ── Bottom Sheet Card ── */}
-      <Animated.View style={[styles.bottomCard, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+      <Animated.View style={[styles.content, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
         
-        {/* Progress Dashes */}
-        <View style={styles.dashContainer}>
-          {SLIDES.map((_, index) => {
-            const isActive = currentIndex === index;
-            return (
-              <View
-                key={index}
-                style={[styles.dash, isActive && styles.dashActive]}
-              />
-            );
-          })}
+        {/* ── Image Carousel ── */}
+        <View style={styles.imageCardWrapper}>
+          <Animated.ScrollView
+            ref={scrollViewRef as any}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            bounces={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+          >
+            {SLIDES.map((slide, index) => (
+              <View key={slide.id} style={styles.slideContainer}>
+                <View style={styles.imageCard}>
+                  <Image
+                    source={slide.image}
+                    style={styles.slideImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              </View>
+            ))}
+          </Animated.ScrollView>
         </View>
 
-        <Text style={styles.title}>{SLIDES[currentIndex].title}</Text>
-        <Text style={styles.subtitle}>{SLIDES[currentIndex].subtitle}</Text>
+        {/* ── Text + Controls ── */}
+        <View style={styles.bottomSection}>
+          
+          {/* Page Dots */}
+          <View style={styles.dotsContainer}>
+            {SLIDES.map((_, index) => {
+              const dotWidth = scrollX.interpolate({
+                inputRange: [(index - 1) * width, index * width, (index + 1) * width],
+                outputRange: [6, 24, 6],
+                extrapolate: 'clamp',
+              });
+              const dotOpacity = scrollX.interpolate({
+                inputRange: [(index - 1) * width, index * width, (index + 1) * width],
+                outputRange: [0.25, 1, 0.25],
+                extrapolate: 'clamp',
+              });
+              return (
+                <Animated.View
+                  key={index}
+                  style={[styles.dot, { width: dotWidth, opacity: dotOpacity }]}
+                />
+              );
+            })}
+          </View>
 
-        {/* ── Continue Button ── */}
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={handlePress}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.primaryBtnText}>
-            {currentIndex === SLIDES.length - 1 ? 'Get Started' : 'Continue'}
-          </Text>
-        </TouchableOpacity>
+          {/* Title */}
+          <Text style={styles.title}>{SLIDES[currentIndex].title}</Text>
+          
+          {/* Subtitle */}
+          <Text style={styles.subtitle}>{SLIDES[currentIndex].subtitle}</Text>
+
+          {/* Primary Button */}
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={handleNext}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.primaryBtnText}>
+              {SLIDES[currentIndex].button}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Skip */}
+          <TouchableOpacity onPress={handleSkip} style={styles.skipBtn} activeOpacity={0.6}>
+            <Text style={styles.skipText}>Skip</Text>
+          </TouchableOpacity>
+        </View>
 
       </Animated.View>
-    </View>
+
+      {/* iOS-style bottom pill indicator */}
+      <View style={styles.homeIndicator}>
+        <View style={styles.homeIndicatorPill} />
+      </View>
+    </SafeAreaView>
   );
 }
+
+const IMAGE_CARD_HEIGHT = height * 0.48;
+const CARD_MARGIN = 24;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
   },
-  carouselContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: height * 0.75,
+  content: {
+    flex: 1,
   },
-  slide: {
+
+  // ── Image Carousel ──
+  imageCardWrapper: {
+    height: IMAGE_CARD_HEIGHT + 20,
+    paddingTop: 10,
+  },
+  slideContainer: {
     width: width,
-    height: height * 0.75,
-    overflow: 'hidden',
+    paddingHorizontal: CARD_MARGIN,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  heroImage: {
+  imageCard: {
+    width: width - CARD_MARGIN * 2,
+    height: IMAGE_CARD_HEIGHT,
+    borderRadius: 28,
+    backgroundColor: '#F5F5F5',
+    overflow: 'hidden',
+    // Subtle shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  slideImage: {
     width: '100%',
     height: '100%',
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.1)',
+
+  // ── Bottom Text + Controls ──
+  bottomSection: {
+    flex: 1,
+    paddingHorizontal: CARD_MARGIN + 8,
+    justifyContent: 'flex-end',
+    paddingBottom: Platform.OS === 'ios' ? 16 : 24,
   },
-  bottomCard: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    paddingHorizontal: 32,
-    paddingTop: 36,
-    paddingBottom: Platform.OS === 'ios' ? 48 : 36,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 20,
-  },
-  dashContainer: {
+
+  // Dots
+  dotsContainer: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 28,
   },
-  dash: {
-    width: 24,
-    height: 3,
-    backgroundColor: '#E5E5E5',
-    borderRadius: 2,
-  },
-  dashActive: {
-    width: 36,
-    height: 3,
+  dot: {
+    height: 6,
+    borderRadius: 3,
     backgroundColor: '#000',
-    borderRadius: 2,
   },
+
+  // Title
   title: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#000',
-    lineHeight: 36,
     textAlign: 'center',
-    marginBottom: 16,
     letterSpacing: -0.5,
-    minHeight: 72, // Reserve space for 2 lines so button doesn't jump
+    marginBottom: 10,
   },
+
+  // Subtitle
   subtitle: {
     fontSize: 15,
-    color: '#888',
+    color: '#999',
     lineHeight: 22,
     fontWeight: '400',
     textAlign: 'center',
-    marginBottom: 40,
-    minHeight: 44, // Reserve space
+    marginBottom: 32,
   },
+
+  // Primary CTA
   primaryBtn: {
     width: '100%',
     backgroundColor: '#000',
-    height: 60,
-    borderRadius: 30,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
   },
   primaryBtnText: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+
+  // Skip
+  skipBtn: {
+    alignSelf: 'center',
+    paddingVertical: 14,
+  },
+  skipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#999',
+  },
+
+  // Home indicator pill
+  homeIndicator: {
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  homeIndicatorPill: {
+    width: 134,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#000',
+    opacity: 0.15,
   },
 });

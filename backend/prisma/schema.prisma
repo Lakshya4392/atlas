@@ -75,17 +75,25 @@ model OutfitItem {
 }
 
 model CachedProduct {
-  id        String   @id @default(cuid())
-  title     String
-  brand     String
-  price     String
-  thumbnail String
-  link      String
-  source    String
-  query     String
-  createdAt DateTime @default(now())
-  category  String?
+  id          String   @id @default(cuid())
+  title       String
+  brand       String
+  price       String
+  thumbnail   String
+  link        String
+  source      String
+  query       String
+  createdAt   DateTime @default(now())
+  
+  category    String?
+  subcategory String?
+  gender      String?
+  color       String?
+  material    String?
+  style       String?
+  metadata    Json?
 
   @@index([query])
   @@index([category])
+  @@index([gender])
 }

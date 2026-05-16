@@ -82,6 +82,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       dispatch({ type: 'LOGIN_START' });
       const user = await authAPI.login(email, password);
       await AsyncStorage.setItem('user', JSON.stringify(user));
+      await AsyncStorage.setItem('hasRegistered', 'true');
       if (user.occupation || user.wearPreference) {
         await AsyncStorage.setItem('onboardingCompleted', 'true');
       }
@@ -97,6 +98,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       dispatch({ type: 'LOGIN_START' });
       const user = await authAPI.register(name, email, password);
       await AsyncStorage.setItem('user', JSON.stringify(user));
+      await AsyncStorage.setItem('hasRegistered', 'true');
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
     } catch (error: any) {
       dispatch({ type: 'LOGIN_FAILURE', payload: error.message });

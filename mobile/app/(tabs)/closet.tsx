@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, Dimensions, Image, ActivityIndicator, Platform
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Dimensions, Image, ActivityIndicator, Platform, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -61,6 +61,8 @@ export default function ClosetScreen() {
   const [activeTab, setActiveTab] = useState('Clothes');
   const [cat, setCat] = useState('All');
   const [items, setItems] = useState<any[]>([]);
+  const [outfits, setOutfits] = useState<any[]>([]);
+  const [viewOutfit, setViewOutfit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const BACKEND_URL = getBackendUrl();
 
@@ -69,16 +71,26 @@ export default function ClosetScreen() {
       AsyncStorage.getItem('user').then(stored => {
         if (stored) {
           const u = JSON.parse(stored);
+          // Fetch clothes
           fetch(`${BACKEND_URL}/api/clothes/${u.id}`)
             .then(res => res.json())
             .then(data => {
               if (data.success) setItems(data.items || []);
               else setItems([]);
             })
-            .catch(() => setItems([]))
+            .catch(() => setItems([]));
+          // Fetch saved outfits/collections
+          fetch(`${BACKEND_URL}/api/outfits/${u.id}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success) setOutfits(data.outfits || []);
+              else setOutfits([]);
+            })
+            .catch(() => setOutfits([]))
             .finally(() => setLoading(false));
         } else {
           setItems([]);
+          setOutfits([]);
           setLoading(false);
         }
       });
@@ -95,10 +107,7 @@ export default function ClosetScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/search')}>
-          <Ionicons name="search" size={16} color="#555" />
-          <Text style={styles.headerBtnText}>Search</Text>
-        </TouchableOpacity>
+        <View style={{ width: 70 }} />
         
         <Text style={styles.title}>Closet</Text>
         
@@ -128,56 +137,129 @@ export default function ClosetScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         
-        {/* ── Category Filters ── */}
-        <View style={styles.catWrapper}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
-            {CATEGORIES.map(c => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.catChip, cat === c && styles.catChipActive]}
-                onPress={() => setCat(c)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.catText, cat === c && styles.catTextActive]}>
-                  {c}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        {activeTab === 'Clothes' ? (
+          <>
+            {/* ── Category Filters ── */}
+            <View style={styles.catWrapper}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
+                {CATEGORIES.map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.catChip, cat === c && styles.catChipActive]}
+                    onPress={() => setCat(c)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.catText, cat === c && styles.catTextActive]}>
+                      {c}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
 
-        {/* ── Image-Only Masonry Grid ── */}
-        {loading ? (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#000" />
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="shirt-outline" size={40} color="#CCC" style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyTitle}>NO ITEMS FOUND</Text>
-          </View>
+            {/* ── Clothes Masonry Grid ── */}
+            {loading ? (
+              <View style={styles.loader}>
+                <ActivityIndicator size="large" color="#000" />
+              </View>
+            ) : filtered.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="shirt-outline" size={40} color="#CCC" style={{ marginBottom: 12 }} />
+                <Text style={styles.emptyTitle}>NO ITEMS FOUND</Text>
+              </View>
+            ) : (
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryColumn}>
+                  {filtered.filter((_, i) => i % 2 === 0).map((item, idx) => (
+                    <ItemCard key={item.id} item={item} index={idx} />
+                  ))}
+                </View>
+                <View style={styles.masonryColumn}>
+                  {filtered.filter((_, i) => i % 2 !== 0).map((item, idx) => (
+                    <ItemCard key={item.id} item={item} index={idx} />
+                  ))}
+                </View>
+              </View>
+            )}
+          </>
         ) : (
-          <View style={styles.masonryGrid}>
-            <View style={styles.masonryColumn}>
-              {filtered.filter((_, i) => i % 2 === 0).map((item, idx) => (
-                <ItemCard key={item.id} item={item} index={idx} />
-              ))}
-            </View>
-            <View style={styles.masonryColumn}>
-              {filtered.filter((_, i) => i % 2 !== 0).map((item, idx) => (
-                <ItemCard key={item.id} item={item} index={idx} />
-              ))}
-            </View>
-          </View>
+          <>
+            {/* ── Saved Outfits / Collections ── */}
+            {loading ? (
+              <View style={styles.loader}>
+                <ActivityIndicator size="large" color="#000" />
+              </View>
+            ) : outfits.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="albums-outline" size={40} color="#CCC" style={{ marginBottom: 12 }} />
+                <Text style={styles.emptyTitle}>NO SAVED LOOKS</Text>
+                <Text style={{ color: '#999', fontSize: 13, marginTop: 4 }}>Try on outfits and save them here</Text>
+              </View>
+            ) : (
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryColumn}>
+                  {outfits.filter((_, i) => i % 2 === 0).map((outfit, idx) => (
+                    <TouchableOpacity key={outfit.id} style={[styles.itemCard, { height: 280 }]} activeOpacity={0.85} onPress={() => setViewOutfit(outfit)}>
+                      <View style={styles.imageContainer}>
+                        {outfit.imageUrl ? (
+                          <Image source={{ uri: outfit.imageUrl }} style={styles.image} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.placeholder}>
+                            <Ionicons name="images-outline" size={32} color="#CCC" />
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.masonryColumn}>
+                  {outfits.filter((_, i) => i % 2 !== 0).map((outfit, idx) => (
+                    <TouchableOpacity key={outfit.id} style={[styles.itemCard, { height: 280 }]} activeOpacity={0.85} onPress={() => setViewOutfit(outfit)}>
+                      <View style={styles.imageContainer}>
+                        {outfit.imageUrl ? (
+                          <Image source={{ uri: outfit.imageUrl }} style={styles.image} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.placeholder}>
+                            <Ionicons name="images-outline" size={32} color="#CCC" />
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
+
+      {/* ── Outfit Viewer Modal ── */}
+      <Modal visible={!!viewOutfit} transparent animationType="fade" onRequestClose={() => setViewOutfit(null)}>
+        <View style={styles.viewerOverlay}>
+          <SafeAreaView style={{ flex: 1 }}>
+            <View style={styles.viewerHeader}>
+              <TouchableOpacity onPress={() => setViewOutfit(null)} style={styles.viewerCloseBtn}>
+                <Ionicons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.viewerImageWrap}>
+              {viewOutfit?.imageUrl ? (
+                <Image source={{ uri: viewOutfit.imageUrl }} style={styles.viewerImage} resizeMode="contain" />
+              ) : (
+                <Ionicons name="images-outline" size={60} color="rgba(255,255,255,0.3)" />
+              )}
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
-  scroll: { paddingBottom: 100 },
+  scroll: { paddingBottom: 150 },
 
   header: {
     flexDirection: 'row',
@@ -294,4 +376,71 @@ const styles = StyleSheet.create({
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
   empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
   emptyTitle: { fontSize: 14, fontWeight: '600', color: '#888' },
+
+  outfitLabel: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  outfitLabelText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  outfitOccasion: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+
+  // Viewer Modal
+  viewerOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  viewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  viewerCloseBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  viewerTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+  },
+  viewerImageWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  viewerImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
+  },
+  viewerFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  viewerOccasion: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
 });

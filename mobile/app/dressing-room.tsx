@@ -5,6 +5,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 
 const { width, height } = Dimensions.get('window');
 
@@ -219,6 +221,42 @@ export default function DressingRoomScreen() {
     return item.category?.toLowerCase() === selectedCategory.toLowerCase();
   });
 
+  const handleUploadAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0].base64) {
+      const base64Uri = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setCurrentAvatarUrl(base64Uri);
+      setUser((prev: any) => ({ ...prev, digitalTwinUrl: base64Uri }));
+    }
+  };
+
+  const handleUploadGarment = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0].base64) {
+      const base64Uri = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      const customItem = {
+        id: `custom_${Date.now()}`,
+        name: 'My Uploaded Item',
+        category: selectedCategory === 'All' ? 'Tops' : selectedCategory,
+        imageUrl: base64Uri,
+        transparentImageUrl: base64Uri,
+        _source: 'custom',
+      };
+      setClosetItems(prev => [customItem, ...prev]);
+      handleTryOn(customItem, currentAvatarUrl || user?.digitalTwinUrl);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
@@ -227,8 +265,8 @@ export default function DressingRoomScreen() {
           <Ionicons name="arrow-back" size={22} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Model</Text>
-        <TouchableOpacity style={styles.iconBtn}>
-          <Ionicons name="ellipsis-vertical" size={18} color="#000" />
+        <TouchableOpacity style={styles.iconBtn} onPress={handleUploadAvatar}>
+          <Ionicons name="camera-outline" size={18} color="#000" />
         </TouchableOpacity>
       </View>
 
@@ -266,6 +304,10 @@ export default function DressingRoomScreen() {
       <View style={styles.bottomDrawer}>
         {/* Filter + Category Row */}
         <View style={styles.filterRow}>
+          <TouchableOpacity style={styles.filterChip} onPress={handleUploadGarment}>
+            <Ionicons name="add" size={14} color="#000" />
+            <Text style={styles.filterChipText}>Upload</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.filterChip}>
             <Ionicons name="options-outline" size={14} color="#000" />
             <Text style={styles.filterChipText}>Filter</Text>
@@ -299,7 +341,7 @@ export default function DressingRoomScreen() {
                    <TouchableOpacity 
                      key={item.id || idx} 
                      style={[styles.itemCard, isSelected && styles.itemCardSelected]}
-                     onPress={() => handleTryOn(item, user?.digitalTwinUrl)}
+                     onPress={() => handleTryOn(item, currentAvatarUrl || user?.digitalTwinUrl)}
                      disabled={isLoading}
                    >
                       {itemImg ? <Image source={{ uri: itemImg }} style={styles.itemCardImg} resizeMode="cover" /> : <View style={styles.skeletonShimmer} />}

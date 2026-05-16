@@ -16,13 +16,19 @@ export const tryOn = async (req: Request, res: Response) => {
   try {
     console.log('🚀 Virtual Try-On Pipeline Starting (Vertex AI Only)...');
 
-    // Step 1: Fetch images and convert to Blobs
-    console.log('📥 Fetching input images...');
-    const humanRes = await fetch(human_img);
-    const humanBlob = await humanRes.blob();
+    // Helper to get base64 from either a data URI or an HTTP URL
+    const getBase64 = async (source: string): Promise<string> => {
+      if (source.startsWith('data:image')) {
+        return source.split(',')[1];
+      }
+      const res = await fetch(source);
+      if (!res.ok) throw new Error(`HTTP Error ${res.status} fetching image`);
+      const buffer = await res.arrayBuffer();
+      return Buffer.from(buffer).toString('base64');
+    };
 
-    const garmRes = await fetch(garm_img);
-    const garmBlob = await garmRes.blob();
+    const personBase64 = await getBase64(human_img);
+    const garmentBase64 = await getBase64(garm_img);
 
     let success = false;
     let generatedImageUrl = '';
@@ -51,9 +57,6 @@ export const tryOn = async (req: Request, res: Response) => {
 
         const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/virtual-try-on-001:predict`;
         
-        const personBase64 = Buffer.from(await humanBlob.arrayBuffer()).toString('base64');
-        const garmentBase64 = Buffer.from(await garmBlob.arrayBuffer()).toString('base64');
-
         const response = await axios.post(url, {
           instances: [{
             personImage: {
@@ -79,6 +82,10 @@ export const tryOn = async (req: Request, res: Response) => {
       } catch (err: any) {
         const errorDetail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
         console.warn('⚠️ Vertex AI failed:', errorDetail);
+        
+        if (errorDetail.includes('safety filter')) {
+           throw new Error('Google AI Safety Filter blocked this image. Please try uploading a different photo with clearer, less revealing clothing.');
+        }
         throw new Error(`Vertex AI Virtual Try-On Failed: ${errorDetail}`);
       }
     }

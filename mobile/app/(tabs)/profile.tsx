@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Switch, Dimensions, Image, ActivityIndicator, Platform, Modal
+  TouchableOpacity, Switch, Dimensions, Image, ActivityIndicator, Platform, Modal, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -28,6 +28,8 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [twinModalVisible, setTwinModalVisible] = useState(false);
+  const [twinGuidelinesVisible, setTwinGuidelinesVisible] = useState(false);
+  const [premiumError, setPremiumError] = useState({visible: false, message: ''});
   const [stats, setStats] = useState({ clothesCount: 0, outfitsCount: 0, favoritesCount: 0, streak: 0, level: 'Style Explorer', style: 'Minimalist' });
 
   const BACKEND_URL = getBackendUrl();
@@ -98,33 +100,50 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleGenerateDigitalTwin = async () => {
-    if (user?.digitalTwinUrl) {
+  const handleGenerateDigitalTwin = async (forceUpdate = false) => {
+    if (!forceUpdate && user?.digitalTwinUrl) {
       setTwinModalVisible(true);
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
 
-    if (!result.canceled && result.assets[0]) {
+    setTwinModalVisible(false);
+    setTwinGuidelinesVisible(true);
+  };
+
+  const pickImage = async (source: 'camera' | 'gallery') => {
+    setTwinGuidelinesVisible(false);
+    let result;
+    
+    if (source === 'camera') {
+       const { status } = await ImagePicker.requestCameraPermissionsAsync();
+       if (status !== 'granted') {
+          setPremiumError({ visible: true, message: 'We need camera permissions to make this work!' });
+          return;
+       }
+       result = await ImagePicker.launchCameraAsync({
+         mediaTypes: ImagePicker.MediaTypeOptions.Images,
+         allowsEditing: true,
+         quality: 0.8,
+         base64: true,
+       });
+    } else {
+       result = await ImagePicker.launchImageLibraryAsync({
+         mediaTypes: ImagePicker.MediaTypeOptions.Images,
+         allowsEditing: true,
+         quality: 0.8,
+         base64: true,
+       });
+    }
+
+    if (!result.canceled && result.assets[0].base64) {
       setUploading(true);
       try {
-        const localUri = result.assets[0].uri;
-        const fileUri = Platform.OS === 'android' && !localUri.startsWith('file://') ? `file://${localUri}` : localUri;
-
-        const formData = new FormData();
-        formData.append('image', {
-          uri: fileUri,
-          type: 'image/jpeg',
-          name: 'twin.jpg',
-        } as any);
+        const base64Uri = `data:image/jpeg;base64,${result.assets[0].base64}`;
 
         const res = await fetch(`${BACKEND_URL}/api/user/${user.id}/digital-twin`, {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Uri }),
         });
         const data = await res.json();
         
@@ -132,13 +151,19 @@ export default function ProfileScreen() {
           const newUser = { ...user, digitalTwinUrl: data.twinUrl };
           await AsyncStorage.setItem('user', JSON.stringify(newUser));
           setUser(newUser);
-          alert('Digital Twin generated successfully!');
+          // alert('Digital Twin generated successfully!');
+          setTwinModalVisible(true);
         } else {
-          alert('Failed to generate Digital Twin: ' + data.error);
+          if (data.error && data.error.includes("VALIDATION_ERROR:")) {
+            const cleanError = data.error.replace("VALIDATION_ERROR:", "").trim();
+            setPremiumError({ visible: true, message: cleanError });
+          } else {
+            setPremiumError({ visible: true, message: data.error || 'Failed to process image' });
+          }
         }
       } catch (e) {
         console.error('Twin generation error:', e);
-        alert('Network error while generating Digital Twin.');
+        setPremiumError({ visible: true, message: 'Network error while generating Digital Twin.' });
       } finally {
         setUploading(false);
       }
@@ -209,7 +234,7 @@ export default function ProfileScreen() {
         {/* ── Main White Menu Card ── */}
         
         {/* Standalone Digital Twin Banner */}
-        <TouchableOpacity style={styles.standaloneTwinBanner} onPress={handleGenerateDigitalTwin} activeOpacity={0.9}>
+        <TouchableOpacity style={styles.standaloneTwinBanner} onPress={() => handleGenerateDigitalTwin()} activeOpacity={0.9}>
           <LinearGradient
             colors={['#111111', '#333333']}
             start={{ x: 0, y: 0 }}
@@ -221,7 +246,7 @@ export default function ProfileScreen() {
               <Ionicons name="sparkles" size={24} color="#FFF" />
               <View style={{ marginLeft: 12 }}>
                 <Text style={styles.twinBannerTitle}>VEYRA DIGITAL TWIN</Text>
-                <Text style={styles.twinBannerSub}>{user?.digitalTwinUrl ? 'View your AI Twin' : 'Create your AI Twin'}</Text>
+                <Text style={styles.twinBannerSub}>{user?.digitalTwinUrl ? 'View & Manage AI Twin' : 'Create your AI Twin'}</Text>
               </View>
             </View>
             <View style={[styles.arrowCircle, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
@@ -259,25 +284,106 @@ export default function ProfileScreen() {
         <Text style={styles.versionText}>VEYRA · v1.0.0</Text>
       </ScrollView>
 
-      {/* ── Twin Modal ── */}
+      {/* ── Twin Viewer Modal (Premium) ── */}
       <Modal visible={twinModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalBackground}>
           <SafeAreaView style={{ flex: 1 }}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setTwinModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={28} color="#000" />
+                <Ionicons name="close" size={24} color="#1A1A1A" />
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>Your Digital Twin</Text>
-              <View style={{ width: 40 }} />
+              <Text style={styles.modalTitle}>Your AI Avatar</Text>
+              <View style={{width: 32}} />
             </View>
             <View style={styles.modalImageContainer}>
               {user?.digitalTwinUrl && (
                 <Image source={{ uri: user.digitalTwinUrl }} style={styles.fullTwinImage} resizeMode="contain" />
               )}
             </View>
+            <View style={{paddingHorizontal: 20, paddingBottom: 30, paddingTop: 16, backgroundColor: '#FFF'}}>
+              <TouchableOpacity
+                style={[styles.premiumPrimaryBtn, { flex: 0, marginRight: 0, width: '100%' }]}
+                onPress={() => { setTwinModalVisible(false); setTwinGuidelinesVisible(true); }}
+              >
+                <Ionicons name="refresh" size={18} color="#FFF" style={{marginRight: 8}} />
+                <Text style={styles.premiumBtnTextWhite}>Update Avatar</Text>
+              </TouchableOpacity>
+            </View>
           </SafeAreaView>
         </View>
       </Modal>
+
+      {/* ── Uploading/Loading Overlay ── */}
+      <Modal visible={uploading} transparent={true} animationType="fade">
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#000" />
+            <Text style={styles.loadingText}>Generating your Digital Twin...</Text>
+            <Text style={styles.loadingSubtext}>This may take 15-30 seconds</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Guidelines Onboarding Modal ── */}
+      <Modal visible={twinGuidelinesVisible} transparent={true} animationType="slide">
+        <View style={styles.guidelinesOverlay}>
+          <View style={styles.guidelinesCard}>
+             <TouchableOpacity style={styles.guidelinesClose} onPress={() => setTwinGuidelinesVisible(false)}>
+                <Ionicons name="close" size={24} color="#888" />
+             </TouchableOpacity>
+             
+             <View style={styles.guidelinesIconHeader}>
+                <Ionicons name="body-outline" size={42} color="#1A1A1A" />
+             </View>
+             
+             <Text style={styles.guidelinesTitle}>Create Your Avatar</Text>
+             <Text style={styles.guidelinesSub}>For the most accurate Virtual Try-On, please follow these rules:</Text>
+
+             <View style={styles.rulesList}>
+                <View style={styles.ruleItem}>
+                   <Ionicons name="checkmark-circle" size={20} color="#1A1A1A" />
+                   <Text style={styles.ruleText}>Stand perfectly straight</Text>
+                </View>
+                <View style={styles.ruleItem}>
+                   <Ionicons name="checkmark-circle" size={20} color="#1A1A1A" />
+                   <Text style={styles.ruleText}>Ensure your Full Body is visible</Text>
+                </View>
+                <View style={styles.ruleItem}>
+                   <Ionicons name="checkmark-circle" size={20} color="#1A1A1A" />
+                   <Text style={styles.ruleText}>Good lighting & plain background</Text>
+                </View>
+             </View>
+
+             <View style={styles.guidelinesActions}>
+                <TouchableOpacity style={styles.premiumPrimaryBtn} onPress={() => pickImage('gallery')}>
+                   <Ionicons name="images" size={20} color="#FFF" style={{marginRight: 8}} />
+                   <Text style={styles.premiumBtnTextWhite}>Gallery</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.premiumSecondaryBtn} onPress={() => pickImage('camera')}>
+                   <Ionicons name="camera" size={20} color="#1A1A1A" style={{marginRight: 8}} />
+                   <Text style={styles.premiumBtnTextDark}>Camera</Text>
+                </TouchableOpacity>
+             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Premium Error Toast ── */}
+      {premiumError.visible && (
+         <View style={styles.premiumErrorOverlay}>
+            <View style={styles.premiumErrorCard}>
+               <Ionicons name="alert-circle" size={32} color="#E74C3C" />
+               <Text style={styles.premiumErrorTitle}>Oops! Something went wrong.</Text>
+               <Text style={styles.premiumErrorMsg}>{premiumError.message}</Text>
+               <TouchableOpacity 
+                 style={styles.premiumErrorBtn} 
+                 onPress={() => setPremiumError({visible: false, message: ''})}
+               >
+                  <Text style={styles.premiumErrorBtnText}>Got it</Text>
+               </TouchableOpacity>
+            </View>
+         </View>
+      )}
 
     </SafeAreaView>
   );
@@ -469,7 +575,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
 
-  // Modal
+  // Twin Modal
   modalBackground: {
     flex: 1,
     backgroundColor: '#FFF',
@@ -480,21 +586,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 4,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
+    color: '#000',
   },
   modalImageContainer: {
     flex: 1,
+    backgroundColor: '#F9F9F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -502,4 +607,61 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+
+  // Loading Overlay
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingBox: {
+    backgroundColor: '#FFF',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  loadingText: {
+    marginTop: 20,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#888',
+    textAlign: 'center',
+  },
+
+  // Guidelines Modal
+  guidelinesOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  guidelinesCard: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 30, paddingBottom: 50, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
+  guidelinesClose: { position: 'absolute', top: 20, right: 20, padding: 8 },
+  guidelinesIconHeader: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  guidelinesTitle: { fontSize: 24, fontWeight: '800', color: '#1A1A1A', marginBottom: 8 },
+  guidelinesSub: { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 22, marginBottom: 24, paddingHorizontal: 10 },
+  rulesList: { width: '100%', backgroundColor: '#F9F9F9', borderRadius: 20, padding: 20, marginBottom: 30 },
+  ruleItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  ruleText: { fontSize: 15, color: '#1A1A1A', fontWeight: '500', marginLeft: 12 },
+  guidelinesActions: { flexDirection: 'row', width: '100%', justifyContent: 'space-between' },
+  premiumPrimaryBtn: { flex: 1, backgroundColor: '#1A1A1A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, marginRight: 10 },
+  premiumSecondaryBtn: { flex: 1, backgroundColor: '#F0F0F0', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, marginLeft: 10 },
+  premiumBtnTextWhite: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  premiumBtnTextDark: { color: '#1A1A1A', fontSize: 16, fontWeight: '700' },
+
+  // Premium Error Overlay
+  premiumErrorOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', zIndex: 9999 },
+  premiumErrorCard: { backgroundColor: '#FFF', width: '85%', borderRadius: 24, padding: 30, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.15, shadowRadius: 30, elevation: 20 },
+  premiumErrorTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A', marginTop: 16, marginBottom: 8 },
+  premiumErrorMsg: { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  premiumErrorBtn: { backgroundColor: '#1A1A1A', width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  premiumErrorBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' }
 });

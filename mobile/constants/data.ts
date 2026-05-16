@@ -79,7 +79,7 @@ export const CATEGORIES = [
 export const CLOTHING_ITEMS: ClothingItem[] = [
   {
     id: '1', name: 'Vintage Wash Denim Jacket', category: 'outerwear',
-    color: 'Indigo', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/denim_jacket.png'),
+    color: 'Indigo', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/beige_hoodie.png'),
     tags: ['casual', 'basic', 'summer'], wearCount: 24, lastWorn: '2026-05-04', favorite: true,
   },
   {
@@ -89,7 +89,7 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
   },
   {
     id: '3', name: 'Denim Track Jacket', category: 'outerwear',
-    color: 'Blue', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/denim_jacket.png'),
+    color: 'Blue', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/beige_hoodie.png'),
     tags: ['edgy', 'statement', 'fall'], wearCount: 12, lastWorn: '2026-04-28', favorite: true,
   },
   {
@@ -99,7 +99,7 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
   },
   {
     id: '5', name: 'Oversized Denim Shirt', category: 'tops',
-    color: 'Indigo', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/denim_jacket.png'),
+    color: 'Indigo', colorHex: '#5A7A9E', brand: 'Archive Est. 109A', image: require('../assets/images/beige_hoodie.png'),
     tags: ['casual', 'layering'], wearCount: 8, lastWorn: '2026-05-01', favorite: false,
   },
   {
@@ -109,7 +109,7 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
   },
   {
     id: '7', name: 'Raw Denim Work Coat', category: 'outerwear',
-    color: 'Dark Blue', colorHex: '#1E3A5F', brand: 'Workwear Co.', image: require('../assets/images/denim_jacket.png'),
+    color: 'Dark Blue', colorHex: '#1E3A5F', brand: 'Workwear Co.', image: require('../assets/images/beige_hoodie.png'),
     tags: ['utilitarian', 'rugged'], wearCount: 15, lastWorn: '2026-05-05', favorite: true,
   },
   {
@@ -119,7 +119,7 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
   },
   {
     id: '9', name: 'Sherpa Lined Denim Jacket', category: 'outerwear',
-    color: 'Light Wash', colorHex: '#A5B4FC', brand: 'Winter Archive', image: require('../assets/images/denim_jacket.png'),
+    color: 'Light Wash', colorHex: '#A5B4FC', brand: 'Winter Archive', image: require('../assets/images/beige_hoodie.png'),
     tags: ['winter', 'warm', 'classic'], wearCount: 5, lastWorn: '2026-04-20', favorite: false,
   },
   {
@@ -129,7 +129,7 @@ export const CLOTHING_ITEMS: ClothingItem[] = [
   },
   {
     id: '11', name: 'Vintage Trucker Jacket', category: 'outerwear',
-    color: 'Distressed Blue', colorHex: '#3B82F6', brand: 'Heritage', image: require('../assets/images/denim_jacket.png'),
+    color: 'Distressed Blue', colorHex: '#3B82F6', brand: 'Heritage', image: require('../assets/images/beige_hoodie.png'),
     tags: ['vintage', 'distressed'], wearCount: 22, lastWorn: '2026-05-06', favorite: false,
   },
   {
